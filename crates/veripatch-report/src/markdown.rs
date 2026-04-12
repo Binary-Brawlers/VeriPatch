@@ -70,6 +70,13 @@ pub fn render_markdown(result: &VerificationResult) -> Result<String> {
         }
     }
 
+    if !result.dependency_notes.is_empty() {
+        output.push_str("\n## Dependency Review\n\n");
+        for note in &result.dependency_notes {
+            output.push_str(&format!("- {}\n", note));
+        }
+    }
+
     if !result.warnings.is_empty() {
         output.push_str("\n## Warnings\n\n");
         for warning in &result.warnings {

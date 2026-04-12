@@ -292,4 +292,17 @@ mod tests {
         assert_eq!(file.hunks[0].lines[1].kind, DiffLineKind::Deletion);
         assert_eq!(file.hunks[0].lines[2].kind, DiffLineKind::Addition);
     }
+
+    #[test]
+    fn parses_added_file_diff() {
+        let diff = "diff --git a/src/new.rs b/src/new.rs\nnew file mode 100644\n--- /dev/null\n+++ b/src/new.rs\n@@ -0,0 +1 @@\n+pub fn new_file() {}\n";
+
+        let parsed = parse_unified_diff(diff).expect("diff should parse");
+        let file = &parsed.files[0];
+
+        assert_eq!(file.change_type, FileChangeType::Added);
+        assert_eq!(file.display_path(), "src/new.rs");
+        assert_eq!(file.additions, 1);
+        assert_eq!(file.deletions, 0);
+    }
 }

@@ -139,11 +139,9 @@ fn determine_verdict(checks: &[CheckResult], risky_patterns: &[RuleFinding], sco
     } else if risky_patterns
         .iter()
         .any(|finding| finding.severity == RiskSeverity::High)
-    {
-        Verdict::Risky
-    } else if checks
-        .iter()
-        .any(|check| check.status == CheckStatus::Failed)
+        || checks
+            .iter()
+            .any(|check| check.status == CheckStatus::Failed)
         || score >= 35
     {
         Verdict::Risky

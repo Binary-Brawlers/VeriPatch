@@ -73,6 +73,7 @@ jobs:
 
       # Package binaries
       - name: Package (Unix)
+        id: package_unix
         if: runner.os != 'Windows'
         run: |
           STAGING="veripatch-${{ needs.meta.outputs.version }}-${{ matrix.target }}"
@@ -81,9 +82,10 @@ jobs:
           cp target/${{ matrix.target }}/release/veripatch-cli "$STAGING/" || true
           cp README.md LICENSE-MIT LICENSE-APACHE "$STAGING/"
           tar czf "$STAGING.tar.gz" "$STAGING"
-          echo "ASSET=$STAGING.tar.gz" >> "$GITHUB_ENV"
+          echo "asset=$STAGING.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Package (Windows)
+        id: package_windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -93,13 +95,13 @@ jobs:
           Copy-Item "target/${{ matrix.target }}/release/veripatch-cli.exe" "$STAGING/" -ErrorAction SilentlyContinue
           Copy-Item "README.md","LICENSE-MIT","LICENSE-APACHE" "$STAGING/"
           Compress-Archive -Path "$STAGING/*" -DestinationPath "$STAGING.zip"
-          echo "ASSET=$STAGING.zip" >> $env:GITHUB_ENV
+          echo "asset=$STAGING.zip" >> $env:GITHUB_OUTPUT
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.target }}
-          path: ${{ env.ASSET }}
+          path: ${{ steps.package_unix.outputs.asset || steps.package_windows.outputs.asset }}
           retention-days: 1
 
   publish:

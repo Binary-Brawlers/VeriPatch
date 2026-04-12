@@ -26,5 +26,6 @@ pub struct VerificationResult {
     pub checks: Vec<CheckResult>,
     pub warnings: Vec<String>,
     pub assumptions: Vec<Assumption>,
+    pub dependency_notes: Vec<String>,
     pub risky_patterns: Vec<RuleFinding>,
 }

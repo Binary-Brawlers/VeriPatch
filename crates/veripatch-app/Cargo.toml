@@ -19,11 +19,14 @@ desktop-ui = ["dep:gpui", "dep:gpui_platform"]
 veripatch-core = { workspace = true }
 veripatch-ai = { workspace = true }
 veripatch-report = { workspace = true }
+veripatch-runners = { workspace = true }
+veripatch-rules = { workspace = true }
 
 gpui = { workspace = true, optional = true }
 gpui_platform = { workspace = true, optional = true }
 anyhow.workspace = true
 clap.workspace = true
+rfd = "0.15"
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

@@ -53,10 +53,31 @@ pub fn analyze_lines(lines: &[RuleInputLine]) -> Vec<RuleFinding> {
             || lower.contains("spawn(")
             || lower.contains("system(")
         {
+            let shell_execution = lower.contains("command::new(\"sh\"")
+                || lower.contains("command::new(\"bash\"")
+                || lower.contains("command::new(\"zsh\"")
+                || lower.contains("command::new(\"cmd\"")
+                || lower.contains("command::new(\"powershell\"")
+                || lower.contains(".arg(\"-c\"")
+                || lower.contains("/bin/sh")
+                || lower.contains("/bin/bash");
+
             findings.push(finding(
-                "shell-execution",
-                RiskSeverity::High,
-                "Added line introduces shell or process execution.",
+                if shell_execution {
+                    "shell-execution"
+                } else {
+                    "process-execution"
+                },
+                if shell_execution {
+                    RiskSeverity::High
+                } else {
+                    RiskSeverity::Medium
+                },
+                if shell_execution {
+                    "Added line introduces shell execution."
+                } else {
+                    "Added line introduces subprocess execution."
+                },
                 line,
             ));
         }

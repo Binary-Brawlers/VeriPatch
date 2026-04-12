@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  meta:
+    name: Release metadata
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.info.outputs.version }}
+      is_beta: ${{ steps.info.outputs.is_beta }}
+    steps:
+      - name: Extract version info
+        id: info
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *"-beta"* ]]; then
+            echo "is_beta=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_beta=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: meta
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
+      # Linux system dependencies for GPUI
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev \
+            libwayland-dev libvulkan-dev libfontconfig-dev \
+            libfreetype6-dev
+
+      - name: Build release binaries
+        run: cargo build --release --target ${{ matrix.target }} -p veripatch-app -p veripatch-cli
+
+      # Package binaries
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          STAGING="veripatch-${{ needs.meta.outputs.version }}-${{ matrix.target }}"
+          mkdir "$STAGING"
+          cp target/${{ matrix.target }}/release/veripatch "$STAGING/" || true
+          cp target/${{ matrix.target }}/release/veripatch-cli "$STAGING/" || true
+          cp README.md LICENSE-MIT LICENSE-APACHE "$STAGING/"
+          tar czf "$STAGING.tar.gz" "$STAGING"
+          echo "ASSET=$STAGING.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $STAGING = "veripatch-${{ needs.meta.outputs.version }}-${{ matrix.target }}"
+          New-Item -ItemType Directory -Path $STAGING
+          Copy-Item "target/${{ matrix.target }}/release/veripatch.exe" "$STAGING/" -ErrorAction SilentlyContinue
+          Copy-Item "target/${{ matrix.target }}/release/veripatch-cli.exe" "$STAGING/" -ErrorAction SilentlyContinue
+          Copy-Item "README.md","LICENSE-MIT","LICENSE-APACHE" "$STAGING/"
+          Compress-Archive -Path "$STAGING/*" -DestinationPath "$STAGING.zip"
+          echo "ASSET=$STAGING.zip" >> $env:GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: ${{ env.ASSET }}
+          retention-days: 1
+
+  publish:
+    name: Publish release
+    needs: [meta, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum * > checksums-sha256.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.meta.outputs.version }}
+          name: "VeriPatch ${{ needs.meta.outputs.version }}"
+          prerelease: ${{ needs.meta.outputs.is_beta == 'true' }}
+          generate_release_notes: true
+          files: |
+            artifacts/*

@@ -1,0 +1,61 @@
+name: Promote Beta to Stable
+
+on:
+  workflow_dispatch:
+    inputs:
+      beta_tag:
+        description: "Beta tag to promote (e.g. v0.1.0-beta.3)"
+        required: true
+        type: string
+      stable_tag:
+        description: "Stable tag to create (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    name: Promote ${{ inputs.beta_tag }} → ${{ inputs.stable_tag }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate inputs
+        run: |
+          # Ensure beta tag exists
+          if ! git rev-parse "refs/tags/${{ inputs.beta_tag }}" &>/dev/null; then
+            echo "::error::Beta tag '${{ inputs.beta_tag }}' does not exist"
+            exit 1
+          fi
+
+          # Ensure beta tag looks like a beta
+          if [[ "${{ inputs.beta_tag }}" != *"-beta"* ]]; then
+            echo "::error::Tag '${{ inputs.beta_tag }}' does not look like a beta tag"
+            exit 1
+          fi
+
+          # Ensure stable tag does not look like a pre-release
+          if [[ "${{ inputs.stable_tag }}" == *"-"* ]]; then
+            echo "::error::Stable tag '${{ inputs.stable_tag }}' should not contain a hyphen"
+            exit 1
+          fi
+
+          # Ensure stable tag doesn't already exist
+          if git rev-parse "refs/tags/${{ inputs.stable_tag }}" &>/dev/null; then
+            echo "::error::Tag '${{ inputs.stable_tag }}' already exists"
+            exit 1
+          fi
+
+      - name: Create stable tag on beta commit
+        run: |
+          COMMIT=$(git rev-list -n 1 "refs/tags/${{ inputs.beta_tag }}")
+          echo "Tagging commit $COMMIT as ${{ inputs.stable_tag }}"
+          git tag "${{ inputs.stable_tag }}" "$COMMIT"
+          git push origin "${{ inputs.stable_tag }}"
+
+      # Pushing the stable tag triggers the release workflow,
+      # which will build binaries and create a non-prerelease GitHub Release.

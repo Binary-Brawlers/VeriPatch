@@ -10,7 +10,6 @@ rust-version.workspace = true
 [dependencies]
 veripatch-runners = { workspace = true }
 veripatch-rules = { workspace = true }
-veripatch-report = { workspace = true }
 
 anyhow.workspace = true
 serde.workspace = true

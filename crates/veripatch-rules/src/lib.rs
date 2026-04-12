@@ -5,3 +5,5 @@
 //! and unsafe deserialization.
 
 pub mod rule;
+
+pub use rule::{Assumption, RiskSeverity, RuleFinding, RuleInputLine, analyze_lines, detect_assumptions};

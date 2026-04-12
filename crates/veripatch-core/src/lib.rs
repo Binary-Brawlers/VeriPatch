@@ -6,3 +6,6 @@
 pub mod diff;
 pub mod pipeline;
 pub mod verdict;
+
+pub use pipeline::{VerificationInput, verify};
+pub use verdict::{Verdict, VerificationResult};

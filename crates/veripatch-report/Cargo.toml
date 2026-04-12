@@ -8,6 +8,10 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+veripatch-core = { workspace = true }
+veripatch-runners = { workspace = true }
+veripatch-rules = { workspace = true }
+
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true

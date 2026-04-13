@@ -5,3 +5,5 @@
 //! a local repository.
 
 pub mod runner;
+
+pub use runner::{CheckResult, CheckStatus, RunnerContext, run_default_checks};

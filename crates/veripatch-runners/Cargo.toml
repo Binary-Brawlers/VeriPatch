@@ -12,3 +12,6 @@ anyhow.workspace = true
 serde.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

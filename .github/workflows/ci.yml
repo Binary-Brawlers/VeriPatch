@@ -6,24 +6,55 @@ on:
   pull_request:
     branches: [develop, main]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
-  check:
-    name: Check
+  verify:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Check
+            command: cargo check --workspace --all-targets
+            components: ""
+            needs_linux_deps: true
+            verify_linux_deps: true
+            use_cache: true
+          - name: Test
+            command: cargo test --workspace
+            components: ""
+            needs_linux_deps: true
+            verify_linux_deps: false
+            use_cache: true
+          - name: Clippy
+            command: cargo clippy --workspace --all-targets -- -D warnings
+            components: clippy
+            needs_linux_deps: true
+            verify_linux_deps: false
+            use_cache: true
+          - name: Format
+            command: cargo fmt --all -- --check
+            components: rustfmt
+            needs_linux_deps: false
+            verify_linux_deps: false
+            use_cache: false
     steps:
       - uses: actions/checkout@v4
+
       - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config libglib2.0-dev libgtk-3-dev \
-            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
-          sudo apt-get install -y libayatana-appindicator3-dev || sudo apt-get install -y libappindicator3-dev
+        if: matrix.needs_linux_deps
+        uses: ./.github/actions/install-linux-deps
+
       - name: Verify Linux native dependencies
+        if: matrix.verify_linux_deps
         run: |
           set -euo pipefail
           for module in \
@@ -31,50 +62,19 @@ jobs:
             webkit2gtk-4.1 javascriptcoregtk-4.1 libsoup-3.0; do
             pkg-config --exists "$module"
           done
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --workspace --all-targets
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config libglib2.0-dev libgtk-3-dev \
-            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
-          sudo apt-get install -y libayatana-appindicator3-dev || sudo apt-get install -y libappindicator3-dev
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace
+        if: matrix.components == ''
 
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Linux dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            pkg-config libglib2.0-dev libgtk-3-dev \
-            libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev
-          sudo apt-get install -y libayatana-appindicator3-dev || sudo apt-get install -y libappindicator3-dev
       - uses: dtolnay/rust-toolchain@stable
+        if: matrix.components != ''
         with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets -- -D warnings
+          components: ${{ matrix.components }}
 
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        if: matrix.use_cache
         with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
+          shared-key: ci-ubuntu-stable
+
+      - name: Run ${{ matrix.name }}
+        run: ${{ matrix.command }}

@@ -226,8 +226,15 @@ function renderSection(containerId, title, items, renderItem) {
     return;
   }
   el.innerHTML = `
-    <div class="section-header">${esc(title)}<span class="count-badge">${items.length}</span></div>
-    ${items.map(renderItem).join("")}
+    <details class="collapsible-section" open>
+      <summary class="section-header">
+        <svg class="chevron-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        ${esc(title)}<span class="count-badge">${items.length}</span>
+      </summary>
+      <div class="section-content">
+        ${items.map(renderItem).join("")}
+      </div>
+    </details>
   `;
 }
 

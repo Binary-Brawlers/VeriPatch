@@ -22,11 +22,9 @@ pub(crate) fn set_theme(theme: Theme, state: State<'_, AppState>) -> FrontendSta
 
 #[tauri::command]
 pub(crate) async fn add_project(state: State<'_, AppState>) -> Result<FrontendState, String> {
-    let picked = tauri::async_runtime::spawn_blocking(|| {
-        rfd::FileDialog::new().pick_folder()
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    let picked = tauri::async_runtime::spawn_blocking(|| rfd::FileDialog::new().pick_folder())
+        .await
+        .map_err(|e| e.to_string())?;
 
     let path = picked.ok_or("No folder selected")?;
     let name = path
@@ -90,7 +88,10 @@ where
 }
 
 #[tauri::command]
-pub(crate) fn set_input_source(source: InputSource, state: State<'_, AppState>) -> Result<FrontendState, String> {
+pub(crate) fn set_input_source(
+    source: InputSource,
+    state: State<'_, AppState>,
+) -> Result<FrontendState, String> {
     with_active_project(&state, |p| {
         p.input_source = source;
     })?;
@@ -154,9 +155,7 @@ pub(crate) async fn pick_patch_file(state: State<'_, AppState>) -> Result<Fronte
 }
 
 #[tauri::command]
-pub(crate) async fn run_verification(
-    state: State<'_, AppState>,
-) -> Result<FrontendState, String> {
+pub(crate) async fn run_verification(state: State<'_, AppState>) -> Result<FrontendState, String> {
     let (repo_path, input_source, clipboard_diff, patch_path) = {
         let active_id = state
             .active_project_id

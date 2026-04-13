@@ -466,14 +466,52 @@ body {
 
 .result-section:empty { display: none; }
 
+.collapsible-section {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.collapsible-section > summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.collapsible-section > summary::-webkit-details-marker { display: none; }
+
+.collapsible-section .chevron-icon {
+  flex-shrink: 0;
+  transition: transform 150ms ease;
+  color: var(--text-tertiary);
+}
+
+.collapsible-section[open] .chevron-icon {
+  transform: rotate(0deg);
+}
+
+.collapsible-section:not([open]) .chevron-icon {
+  transform: rotate(-90deg);
+}
+
+.section-content {
+  padding: 0 12px 12px;
+}
+
 .section-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  padding: 10px 12px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
+  transition: background var(--transition);
+}
+
+.section-header:hover {
+  background: var(--bg-surface-hover);
 }
 
 .section-header .count-badge {

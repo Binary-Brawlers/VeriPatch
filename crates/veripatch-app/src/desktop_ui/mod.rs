@@ -11,7 +11,7 @@ pub fn run() -> anyhow::Result<()> {
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle();
-            let app_state = storage::load_or_initialize_state(&handle)?;
+            let app_state = storage::load_or_initialize_state(handle)?;
             app.manage(app_state);
 
             // ── Menu bar ───────────────────────────────────────────

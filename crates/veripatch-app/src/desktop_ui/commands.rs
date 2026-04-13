@@ -1,8 +1,8 @@
 use std::fs;
 
+use chrono::Utc;
 use tauri::State;
 use veripatch_core::{VerificationInput, VerificationMode, load_local_diff, verify};
-use chrono::Utc;
 
 use super::storage;
 use super::types::*;
@@ -63,7 +63,10 @@ pub(crate) async fn add_project(state: State<'_, AppState>) -> Result<FrontendSt
 }
 
 #[tauri::command]
-pub(crate) fn remove_project(project_id: String, state: State<'_, AppState>) -> Result<FrontendState, String> {
+pub(crate) fn remove_project(
+    project_id: String,
+    state: State<'_, AppState>,
+) -> Result<FrontendState, String> {
     {
         let mut projects = state.projects.lock().unwrap();
         projects.retain(|p| p.id != project_id);
@@ -81,7 +84,10 @@ pub(crate) fn remove_project(project_id: String, state: State<'_, AppState>) -> 
 }
 
 #[tauri::command]
-pub(crate) fn select_project(project_id: String, state: State<'_, AppState>) -> Result<FrontendState, String> {
+pub(crate) fn select_project(
+    project_id: String,
+    state: State<'_, AppState>,
+) -> Result<FrontendState, String> {
     *state.active_project_id.lock().unwrap() = Some(project_id);
     persist_state(&state)?;
     Ok(state.to_frontend_state())

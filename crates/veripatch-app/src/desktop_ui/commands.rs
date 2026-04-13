@@ -67,15 +67,17 @@ pub(crate) fn remove_project(
     project_id: String,
     state: State<'_, AppState>,
 ) -> Result<FrontendState, String> {
-    {
+    let next_active_project_id = {
         let mut projects = state.projects.lock().unwrap();
         projects.retain(|p| p.id != project_id);
-    }
+        projects.first().map(|p| p.id.clone())
+    };
 
-    let mut active = state.active_project_id.lock().unwrap();
-    if active.as_deref() == Some(&project_id) {
-        let projects = state.projects.lock().unwrap();
-        *active = projects.first().map(|p| p.id.clone());
+    {
+        let mut active = state.active_project_id.lock().unwrap();
+        if active.as_deref() == Some(&project_id) {
+            *active = next_active_project_id;
+        }
     }
 
     persist_state(&state)?;
@@ -112,6 +114,17 @@ where
         .ok_or("Active project not found")?;
     f(project);
     Ok(())
+}
+
+fn set_active_project_run_state(state: &AppState, run_state: RunState) -> Result<(), String> {
+    with_active_project(state, move |project| {
+        project.run_state = run_state;
+    })
+}
+
+fn persist_failed_run_state(state: &AppState, message: String) {
+    let _ = set_active_project_run_state(state, RunState::Failed(message));
+    let _ = persist_state(state);
 }
 
 #[tauri::command]
@@ -209,57 +222,61 @@ pub(crate) async fn run_verification(state: State<'_, AppState>) -> Result<Front
 
     persist_state(&state)?;
 
-    let (diff_text, mode, source_label) = match input_source {
-        InputSource::CurrentWorkingTree => {
-            let diff = load_local_diff(&repo_path)
-                .await
-                .map_err(|e| format!("{e:#}"))?;
-            (
-                diff,
-                VerificationMode::CurrentWorkingTree,
-                "Working tree".to_string(),
-            )
-        }
-        InputSource::ClipboardDiff => {
-            let diff = clipboard_diff
-                .ok_or("Load a unified diff from the clipboard before running verification")?;
-            (
-                diff,
-                VerificationMode::ApplyPatchToTempClone,
-                "Clipboard diff".to_string(),
-            )
-        }
-        InputSource::PatchFile => {
-            let path =
-                patch_path.ok_or("Choose a .patch or .diff file before running verification")?;
-            let diff = fs::read_to_string(&path)
-                .map_err(|e| format!("failed to read patch file `{}`: {e}", path.display()))?;
-            (
-                diff,
-                VerificationMode::ApplyPatchToTempClone,
-                format!("Patch: {}", path.display()),
-            )
-        }
-    };
+    let verification_result = async {
+        let (diff_text, mode, source_label) = match input_source {
+            InputSource::CurrentWorkingTree => {
+                let diff = load_local_diff(&repo_path)
+                    .await
+                    .map_err(|e| format!("{e:#}"))?;
+                (
+                    diff,
+                    VerificationMode::CurrentWorkingTree,
+                    "Working tree".to_string(),
+                )
+            }
+            InputSource::ClipboardDiff => {
+                let diff = clipboard_diff
+                    .ok_or("Load a unified diff from the clipboard before running verification")?;
+                (
+                    diff,
+                    VerificationMode::ApplyPatchToTempClone,
+                    "Clipboard diff".to_string(),
+                )
+            }
+            InputSource::PatchFile => {
+                let path = patch_path
+                    .ok_or("Choose a .patch or .diff file before running verification")?;
+                let diff = fs::read_to_string(&path)
+                    .map_err(|e| format!("failed to read patch file `{}`: {e}", path.display()))?;
+                (
+                    diff,
+                    VerificationMode::ApplyPatchToTempClone,
+                    format!("Patch: {}", path.display()),
+                )
+            }
+        };
 
-    let result = verify(VerificationInput {
-        repo_path,
-        diff_text,
-        mode,
-    })
-    .await
-    .map_err(|e| {
-        let message = format!("{e:#}");
-        let _ = with_active_project(&state, |p| {
-            p.run_state = RunState::Failed(message.clone());
-        });
-        let _ = persist_state(&state);
-        message
-    })?;
+        let result = verify(VerificationInput {
+            repo_path,
+            diff_text,
+            mode,
+        })
+        .await
+        .map_err(|e| format!("{e:#}"))?;
 
-    let snapshot = VerificationSnapshot {
-        source_label,
-        result,
+        Ok::<_, String>(VerificationSnapshot {
+            source_label,
+            result,
+        })
+    }
+    .await;
+
+    let snapshot = match verification_result {
+        Ok(snapshot) => snapshot,
+        Err(message) => {
+            persist_failed_run_state(&state, message.clone());
+            return Err(message);
+        }
     };
 
     let run_record = VerificationRunRecord {

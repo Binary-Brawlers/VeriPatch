@@ -33,6 +33,7 @@ pub(crate) struct ProjectEntry {
     pub clipboard_diff: Option<String>,
     pub patch_path: Option<String>,
     pub run_state: RunState,
+    pub run_history: Vec<VerificationRunRecord>,
 }
 
 // ── Run state ──────────────────────────────────────────────────────
@@ -51,6 +52,13 @@ pub(crate) enum RunState {
 pub(crate) struct VerificationSnapshot {
     pub source_label: String,
     pub result: veripatch_core::VerificationResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct VerificationRunRecord {
+    pub run_id: String,
+    pub ran_at: String,
+    pub snapshot: VerificationSnapshot,
 }
 
 // ── Frontend-facing state ──────────────────────────────────────────
@@ -72,6 +80,7 @@ pub(crate) struct ProjectState {
     pub clipboard_diff: Option<String>,
     pub patch_path: Option<PathBuf>,
     pub run_state: RunState,
+    pub run_history: Vec<VerificationRunRecord>,
 }
 
 impl ProjectState {
@@ -84,6 +93,7 @@ impl ProjectState {
             clipboard_diff: None,
             patch_path: None,
             run_state: RunState::Idle,
+            run_history: Vec::new(),
         }
     }
 
@@ -96,6 +106,71 @@ impl ProjectState {
             clipboard_diff: self.clipboard_diff.clone(),
             patch_path: self.patch_path.as_ref().map(|p| p.display().to_string()),
             run_state: self.run_state.clone(),
+            run_history: self.run_history.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PersistedProjectState {
+    pub id: String,
+    pub name: String,
+    pub repo_path: String,
+    pub input_source: InputSource,
+    pub clipboard_diff: Option<String>,
+    pub patch_path: Option<String>,
+    pub run_state: RunState,
+    #[serde(default)]
+    pub run_history: Vec<VerificationRunRecord>,
+}
+
+impl From<&ProjectState> for PersistedProjectState {
+    fn from(value: &ProjectState) -> Self {
+        Self {
+            id: value.id.clone(),
+            name: value.name.clone(),
+            repo_path: value.repo_path.display().to_string(),
+            input_source: value.input_source,
+            clipboard_diff: value.clipboard_diff.clone(),
+            patch_path: value.patch_path.as_ref().map(|p| p.display().to_string()),
+            run_state: value.run_state.clone(),
+            run_history: value.run_history.clone(),
+        }
+    }
+}
+
+impl From<PersistedProjectState> for ProjectState {
+    fn from(value: PersistedProjectState) -> Self {
+        Self {
+            id: value.id,
+            name: value.name,
+            repo_path: PathBuf::from(value.repo_path),
+            input_source: value.input_source,
+            clipboard_diff: value.clipboard_diff,
+            patch_path: value.patch_path.map(PathBuf::from),
+            run_state: value.run_state,
+            run_history: value.run_history,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PersistedAppState {
+    pub theme: Theme,
+    pub projects: Vec<PersistedProjectState>,
+    pub active_project_id: Option<String>,
+    pub next_project_id: u64,
+    pub next_run_id: u64,
+}
+
+impl Default for PersistedAppState {
+    fn default() -> Self {
+        Self {
+            theme: Theme::System,
+            projects: Vec::new(),
+            active_project_id: None,
+            next_project_id: 1,
+            next_run_id: 1,
         }
     }
 }
@@ -104,26 +179,52 @@ pub(crate) struct AppState {
     pub theme: Mutex<Theme>,
     pub projects: Mutex<Vec<ProjectState>>,
     pub active_project_id: Mutex<Option<String>>,
-    next_id: Mutex<u64>,
-}
-
-impl Default for AppState {
-    fn default() -> Self {
-        Self {
-            theme: Mutex::new(Theme::System),
-            projects: Mutex::new(Vec::new()),
-            active_project_id: Mutex::new(None),
-            next_id: Mutex::new(1),
-        }
-    }
+    next_project_id: Mutex<u64>,
+    next_run_id: Mutex<u64>,
+    pub storage_path: PathBuf,
 }
 
 impl AppState {
+    pub fn from_persisted(storage_path: PathBuf, persisted: PersistedAppState) -> Self {
+        Self {
+            theme: Mutex::new(persisted.theme),
+            projects: Mutex::new(
+                persisted
+                    .projects
+                    .into_iter()
+                    .map(ProjectState::from)
+                    .collect(),
+            ),
+            active_project_id: Mutex::new(persisted.active_project_id),
+            next_project_id: Mutex::new(persisted.next_project_id.max(1)),
+            next_run_id: Mutex::new(persisted.next_run_id.max(1)),
+            storage_path,
+        }
+    }
+
     pub fn next_project_id(&self) -> String {
-        let mut counter = self.next_id.lock().unwrap();
+        let mut counter = self.next_project_id.lock().unwrap();
         let id = format!("proj-{counter}");
         *counter += 1;
         id
+    }
+
+    pub fn next_run_id(&self) -> String {
+        let mut counter = self.next_run_id.lock().unwrap();
+        let id = format!("run-{counter}");
+        *counter += 1;
+        id
+    }
+
+    pub fn to_persisted_state(&self) -> PersistedAppState {
+        let projects = self.projects.lock().unwrap();
+        PersistedAppState {
+            theme: *self.theme.lock().unwrap(),
+            projects: projects.iter().map(PersistedProjectState::from).collect(),
+            active_project_id: self.active_project_id.lock().unwrap().clone(),
+            next_project_id: *self.next_project_id.lock().unwrap(),
+            next_run_id: *self.next_run_id.lock().unwrap(),
+        }
     }
 
     pub fn to_frontend_state(&self) -> FrontendState {

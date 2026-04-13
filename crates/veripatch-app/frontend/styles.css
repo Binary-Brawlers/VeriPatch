@@ -718,6 +718,66 @@ body {
   margin-left: 8px;
 }
 
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  margin-bottom: 6px;
+  box-shadow: var(--shadow-sm);
+}
+
+.history-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.history-run-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.history-time {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.history-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.history-source {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-verdict {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.history-score {
+  color: var(--text-secondary);
+}
+
 /* ─── Spinner ────────────────────────────────────────────────── */
 
 .spinner {

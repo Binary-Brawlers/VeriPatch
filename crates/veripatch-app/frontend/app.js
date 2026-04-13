@@ -62,7 +62,7 @@ function render() {
 
   renderToolbar(activeProject);
   renderConfigBar(activeProject);
-  renderResults(activeProject.run_state);
+  renderResults(activeProject);
 }
 
 function applyTheme(theme) {
@@ -137,7 +137,8 @@ function renderConfigBar(project) {
     project.patch_path || "No file selected";
 }
 
-function renderResults(runState) {
+function renderResults(project) {
+  const runState = project.run_state;
   const ids = ["result-idle", "result-running", "result-failed", "result-finished"];
   ids.forEach((id) => (document.getElementById(id).style.display = "none"));
 
@@ -157,6 +158,74 @@ function renderResults(runState) {
       renderSnapshot(runState.data);
       break;
   }
+
+  renderRunHistory(project.run_history || []);
+}
+
+function renderRunHistory(runHistory) {
+  const section = document.getElementById("section-history");
+  if (!runHistory || runHistory.length === 0) {
+    section.innerHTML = "";
+    return;
+  }
+
+  section.innerHTML = `
+    <details class="collapsible-section" open>
+      <summary class="section-header">
+        <svg class="chevron-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        Run History<span class="count-badge">${runHistory.length}</span>
+      </summary>
+      <div class="section-content">
+        ${runHistory.map((entry, index) => {
+          const verdict = entry.snapshot?.result?.verdict || "UNKNOWN";
+          const verdictClass = `verdict-${String(verdict).toLowerCase()}`;
+          return `<div class="history-item" data-run-index="${index}">
+            <div class="history-main">
+              <div class="history-head">
+                <span class="history-run-id">${esc(entry.run_id || `run-${index + 1}`)}</span>
+                <span class="history-time">${esc(formatRunTimestamp(entry.ran_at))}</span>
+              </div>
+              <div class="history-meta">
+                <span class="history-source">${esc(entry.snapshot?.source_label || "Unknown source")}</span>
+                <span class="history-verdict ${verdictClass}">${esc(verdict)}</span>
+                <span class="history-score">${entry.snapshot?.result?.score ?? "-"}/100</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-sm history-open-btn" data-run-index="${index}">Open</button>
+          </div>`;
+        }).join("")}
+      </div>
+    </details>
+  `;
+
+  section.querySelectorAll(".history-open-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      const idx = Number(btn.dataset.runIndex);
+      openRunFromHistory(idx);
+    });
+  });
+}
+
+function openRunFromHistory(index) {
+  const active = getActiveProject();
+  if (!active || !active.run_history || !active.run_history[index]) return;
+  const entry = active.run_history[index];
+  active.run_state = { kind: "finished", data: entry.snapshot };
+  render();
+}
+
+function formatRunTimestamp(value) {
+  if (!value) return "Unknown time";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function renderSnapshot(snapshot) {
@@ -352,11 +421,17 @@ async function pickPatchFile() {
 
 async function runVerification() {
   try {
-    renderResults({ kind: "running" });
+    const activeProject = getActiveProject();
+    if (activeProject) {
+      renderResults({ ...activeProject, run_state: { kind: "running" } });
+    }
     state = await invoke("run_verification");
     render();
   } catch (e) {
-    renderResults({ kind: "failed", data: String(e) });
+    const activeProject = getActiveProject();
+    if (activeProject) {
+      renderResults({ ...activeProject, run_state: { kind: "failed", data: String(e) } });
+    }
   }
 }
 

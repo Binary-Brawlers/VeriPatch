@@ -2,7 +2,9 @@ use std::fs;
 
 use tauri::State;
 use veripatch_core::{VerificationInput, VerificationMode, load_local_diff, verify};
+use chrono::Utc;
 
+use super::storage;
 use super::types::*;
 
 // ── App-level commands ─────────────────────────────────────────────
@@ -13,9 +15,23 @@ pub(crate) fn get_state(state: State<'_, AppState>) -> FrontendState {
 }
 
 #[tauri::command]
-pub(crate) fn set_theme(theme: Theme, state: State<'_, AppState>) -> FrontendState {
+pub(crate) fn get_run_history(
+    project_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<VerificationRunRecord>, String> {
+    let projects = state.projects.lock().unwrap();
+    let project = projects
+        .iter()
+        .find(|p| p.id == project_id)
+        .ok_or("Project not found")?;
+    Ok(project.run_history.clone())
+}
+
+#[tauri::command]
+pub(crate) fn set_theme(theme: Theme, state: State<'_, AppState>) -> Result<FrontendState, String> {
     *state.theme.lock().unwrap() = theme;
-    state.to_frontend_state()
+    persist_state(&state)?;
+    Ok(state.to_frontend_state())
 }
 
 // ── Project management ─────────────────────────────────────────────
@@ -41,11 +57,13 @@ pub(crate) async fn add_project(state: State<'_, AppState>) -> Result<FrontendSt
     }
     *state.active_project_id.lock().unwrap() = Some(id);
 
+    persist_state(&state)?;
+
     Ok(state.to_frontend_state())
 }
 
 #[tauri::command]
-pub(crate) fn remove_project(project_id: String, state: State<'_, AppState>) -> FrontendState {
+pub(crate) fn remove_project(project_id: String, state: State<'_, AppState>) -> Result<FrontendState, String> {
     {
         let mut projects = state.projects.lock().unwrap();
         projects.retain(|p| p.id != project_id);
@@ -57,13 +75,16 @@ pub(crate) fn remove_project(project_id: String, state: State<'_, AppState>) -> 
         *active = projects.first().map(|p| p.id.clone());
     }
 
-    state.to_frontend_state()
+    persist_state(&state)?;
+
+    Ok(state.to_frontend_state())
 }
 
 #[tauri::command]
-pub(crate) fn select_project(project_id: String, state: State<'_, AppState>) -> FrontendState {
+pub(crate) fn select_project(project_id: String, state: State<'_, AppState>) -> Result<FrontendState, String> {
     *state.active_project_id.lock().unwrap() = Some(project_id);
-    state.to_frontend_state()
+    persist_state(&state)?;
+    Ok(state.to_frontend_state())
 }
 
 // ── Per-project commands ───────────────────────────────────────────
@@ -95,6 +116,7 @@ pub(crate) fn set_input_source(
     with_active_project(&state, |p| {
         p.input_source = source;
     })?;
+    persist_state(&state)?;
     Ok(state.to_frontend_state())
 }
 
@@ -113,6 +135,7 @@ pub(crate) fn set_clipboard_diff(
             p.run_state = RunState::Idle;
         }
     })?;
+    persist_state(&state)?;
     Ok(state.to_frontend_state())
 }
 
@@ -149,6 +172,7 @@ pub(crate) async fn pick_patch_file(state: State<'_, AppState>) -> Result<Fronte
             p.input_source = InputSource::PatchFile;
             p.run_state = RunState::Idle;
         })?;
+        persist_state(&state)?;
     }
 
     Ok(state.to_frontend_state())
@@ -176,6 +200,8 @@ pub(crate) async fn run_verification(state: State<'_, AppState>) -> Result<Front
             project.patch_path.clone(),
         )
     };
+
+    persist_state(&state)?;
 
     let (diff_text, mode, source_label) = match input_source {
         InputSource::CurrentWorkingTree => {
@@ -216,16 +242,36 @@ pub(crate) async fn run_verification(state: State<'_, AppState>) -> Result<Front
         mode,
     })
     .await
-    .map_err(|e| format!("{e:#}"))?;
+    .map_err(|e| {
+        let message = format!("{e:#}");
+        let _ = with_active_project(&state, |p| {
+            p.run_state = RunState::Failed(message.clone());
+        });
+        let _ = persist_state(&state);
+        message
+    })?;
 
     let snapshot = VerificationSnapshot {
         source_label,
         result,
     };
 
+    let run_record = VerificationRunRecord {
+        run_id: state.next_run_id(),
+        ran_at: Utc::now().to_rfc3339(),
+        snapshot: snapshot.clone(),
+    };
+
     with_active_project(&state, |p| {
         p.run_state = RunState::Finished(snapshot);
+        p.run_history.insert(0, run_record);
     })?;
 
+    persist_state(&state)?;
+
     Ok(state.to_frontend_state())
+}
+
+fn persist_state(state: &AppState) -> Result<(), String> {
+    storage::persist_state(state).map_err(|e| format!("failed to persist state: {e:#}"))
 }

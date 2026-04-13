@@ -1,4 +1,5 @@
 mod commands;
+mod storage;
 mod types;
 
 use tauri::Manager;
@@ -10,6 +11,8 @@ pub fn run() -> anyhow::Result<()> {
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle();
+            let app_state = storage::load_or_initialize_state(&handle)?;
+            app.manage(app_state);
 
             // ── Menu bar ───────────────────────────────────────────
             let add_project = MenuItemBuilder::with_id("add_project", "Add Project…")
@@ -70,9 +73,9 @@ pub fn run() -> anyhow::Result<()> {
 
             Ok(())
         })
-        .manage(types::AppState::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_state,
+            commands::get_run_history,
             commands::set_theme,
             commands::add_project,
             commands::remove_project,

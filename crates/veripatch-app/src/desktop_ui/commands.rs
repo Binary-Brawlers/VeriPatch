@@ -5,6 +5,7 @@ use tauri::State;
 use veripatch_core::{VerificationInput, VerificationMode, load_local_diff, verify};
 use veripatch_report::markdown::render_markdown_with_source;
 
+use super::github;
 use super::storage;
 use super::types::*;
 
@@ -117,6 +118,24 @@ where
     Ok(())
 }
 
+fn with_active_project_ref<F, T>(state: &AppState, f: F) -> Result<T, String>
+where
+    F: FnOnce(&ProjectState) -> T,
+{
+    let active_id = state
+        .active_project_id
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("No active project")?;
+    let projects = state.projects.lock().unwrap();
+    let project = projects
+        .iter()
+        .find(|p| p.id == active_id)
+        .ok_or("Active project not found")?;
+    Ok(f(project))
+}
+
 fn set_active_project_run_state(state: &AppState, run_state: RunState) -> Result<(), String> {
     with_active_project(state, move |project| {
         project.run_state = run_state;
@@ -152,6 +171,8 @@ pub(crate) fn set_clipboard_diff(
         } else {
             p.clipboard_diff = Some(diff_text.clone());
             p.input_source = InputSource::ClipboardDiff;
+            p.pull_request_message = None;
+            p.pull_request_error = None;
             p.run_state = RunState::Idle;
         }
     })?;
@@ -190,6 +211,8 @@ pub(crate) async fn pick_patch_file(state: State<'_, AppState>) -> Result<Fronte
         with_active_project(&state, |p| {
             p.patch_path = Some(path);
             p.input_source = InputSource::PatchFile;
+            p.pull_request_message = None;
+            p.pull_request_error = None;
             p.run_state = RunState::Idle;
         })?;
         persist_state(&state)?;
@@ -199,8 +222,240 @@ pub(crate) async fn pick_patch_file(state: State<'_, AppState>) -> Result<Fronte
 }
 
 #[tauri::command]
+pub(crate) async fn refresh_pull_requests(
+    state: State<'_, AppState>,
+) -> Result<FrontendState, String> {
+    let repo_path = with_active_project_ref(&state, |project| project.repo_path.clone())?;
+
+    with_active_project(&state, |project| {
+        project.pull_request_busy = true;
+        project.pull_request_error = None;
+        project.pull_request_message = Some("Refreshing pull requests…".into());
+    })?;
+    persist_state(&state)?;
+
+    let pull_requests = match github::list_pull_requests(&repo_path).await {
+        Ok(pull_requests) => pull_requests,
+        Err(error) => {
+            let message = format!("{error:#}");
+            with_active_project(&state, |project| {
+                project.pull_request_busy = false;
+                project.pull_request_error = Some(message.clone());
+                project.pull_request_message = None;
+            })?;
+            persist_state(&state)?;
+            return Err(message);
+        }
+    };
+
+    let count = pull_requests.len();
+    with_active_project(&state, move |project| {
+        project.pull_request_busy = false;
+        project.pull_request_error = None;
+        project.pull_requests = pull_requests;
+        project.pull_request_message = Some(if count == 0 {
+            "No open pull requests found for this repository.".into()
+        } else {
+            format!(
+                "Loaded {count} open pull request{}.",
+                if count == 1 { "" } else { "s" }
+            )
+        });
+
+        if let Some(selected_number) = project.selected_pull_request_number {
+            if !project
+                .pull_requests
+                .iter()
+                .any(|pull_request| pull_request.number == selected_number)
+            {
+                project.selected_pull_request_number = project
+                    .pull_requests
+                    .first()
+                    .map(|pull_request| pull_request.number);
+            }
+        } else {
+            project.selected_pull_request_number = project
+                .pull_requests
+                .first()
+                .map(|pull_request| pull_request.number);
+        }
+    })?;
+    persist_state(&state)?;
+
+    Ok(state.to_frontend_state())
+}
+
+#[tauri::command]
+pub(crate) fn select_pull_request(
+    number: Option<u64>,
+    state: State<'_, AppState>,
+) -> Result<FrontendState, String> {
+    with_active_project(&state, |project| {
+        project.selected_pull_request_number = number;
+        project.pull_request_error = None;
+        project.pull_request_message =
+            number.map(|selected| format!("Selected pull request #{selected}."));
+    })?;
+    persist_state(&state)?;
+    Ok(state.to_frontend_state())
+}
+
+#[tauri::command]
+pub(crate) async fn merge_selected_pull_request(
+    state: State<'_, AppState>,
+) -> Result<FrontendState, String> {
+    let (repo_path, number) = with_active_project_ref(&state, |project| {
+        (
+            project.repo_path.clone(),
+            project.selected_pull_request_number,
+        )
+    })?;
+    let number = number.ok_or("Choose a pull request before merging")?;
+
+    with_active_project(&state, |project| {
+        project.pull_request_busy = true;
+        project.pull_request_error = None;
+        project.pull_request_message = Some(format!("Merging pull request #{number}…"));
+    })?;
+    persist_state(&state)?;
+
+    match github::merge_pull_request(&repo_path, number).await {
+        Ok(()) => {}
+        Err(error) => {
+            let message = format!("{error:#}");
+            with_active_project(&state, |project| {
+                project.pull_request_busy = false;
+                project.pull_request_error = Some(message.clone());
+                project.pull_request_message = None;
+            })?;
+            persist_state(&state)?;
+            return Err(message);
+        }
+    }
+
+    let pull_requests = match github::list_pull_requests(&repo_path).await {
+        Ok(pull_requests) => pull_requests,
+        Err(error) => {
+            let message = format!(
+                "Pull request #{number} was merged, but refreshing the pull request list failed: {error:#}"
+            );
+            with_active_project(&state, |project| {
+                project.pull_request_busy = false;
+                project.pull_request_error = Some(message.clone());
+                project.pull_request_message = Some(format!(
+                    "Pull request #{number} was merged. Refresh the list to update it."
+                ));
+            })?;
+            persist_state(&state)?;
+            return Err(message);
+        }
+    };
+
+    with_active_project(&state, move |project| {
+        project.pull_request_busy = false;
+        project.pull_request_error = None;
+        project.pull_requests = pull_requests;
+        project.selected_pull_request_number = project
+            .pull_requests
+            .iter()
+            .find(|pull_request| pull_request.number == number)
+            .map(|pull_request| pull_request.number)
+            .or_else(|| {
+                project
+                    .pull_requests
+                    .first()
+                    .map(|pull_request| pull_request.number)
+            });
+        project.pull_request_message = Some(format!("Pull request #{number} was merged."));
+    })?;
+    persist_state(&state)?;
+
+    Ok(state.to_frontend_state())
+}
+
+#[tauri::command]
+pub(crate) async fn close_selected_pull_request(
+    state: State<'_, AppState>,
+) -> Result<FrontendState, String> {
+    let (repo_path, number) = with_active_project_ref(&state, |project| {
+        (
+            project.repo_path.clone(),
+            project.selected_pull_request_number,
+        )
+    })?;
+    let number = number.ok_or("Choose a pull request before closing")?;
+
+    with_active_project(&state, |project| {
+        project.pull_request_busy = true;
+        project.pull_request_error = None;
+        project.pull_request_message = Some(format!("Closing pull request #{number}…"));
+    })?;
+    persist_state(&state)?;
+
+    match github::close_pull_request(&repo_path, number).await {
+        Ok(()) => {}
+        Err(error) => {
+            let message = format!("{error:#}");
+            with_active_project(&state, |project| {
+                project.pull_request_busy = false;
+                project.pull_request_error = Some(message.clone());
+                project.pull_request_message = None;
+            })?;
+            persist_state(&state)?;
+            return Err(message);
+        }
+    }
+
+    let pull_requests = match github::list_pull_requests(&repo_path).await {
+        Ok(pull_requests) => pull_requests,
+        Err(error) => {
+            let message = format!(
+                "Pull request #{number} was closed, but refreshing the pull request list failed: {error:#}"
+            );
+            with_active_project(&state, |project| {
+                project.pull_request_busy = false;
+                project.pull_request_error = Some(message.clone());
+                project.pull_request_message = Some(format!(
+                    "Pull request #{number} was closed. Refresh the list to update it."
+                ));
+            })?;
+            persist_state(&state)?;
+            return Err(message);
+        }
+    };
+
+    with_active_project(&state, move |project| {
+        project.pull_request_busy = false;
+        project.pull_request_error = None;
+        project.pull_requests = pull_requests;
+        project.selected_pull_request_number = project
+            .pull_requests
+            .iter()
+            .find(|pull_request| pull_request.number == number)
+            .map(|pull_request| pull_request.number)
+            .or_else(|| {
+                project
+                    .pull_requests
+                    .first()
+                    .map(|pull_request| pull_request.number)
+            });
+        project.pull_request_message = Some(format!("Pull request #{number} was closed."));
+    })?;
+    persist_state(&state)?;
+
+    Ok(state.to_frontend_state())
+}
+
+#[tauri::command]
 pub(crate) async fn run_verification(state: State<'_, AppState>) -> Result<FrontendState, String> {
-    let (repo_path, input_source, clipboard_diff, patch_path) = {
+    let (
+        repo_path,
+        input_source,
+        clipboard_diff,
+        patch_path,
+        pull_request_number,
+        pull_request_title,
+    ) = {
         let active_id = state
             .active_project_id
             .lock()
@@ -218,6 +473,14 @@ pub(crate) async fn run_verification(state: State<'_, AppState>) -> Result<Front
             project.input_source,
             project.clipboard_diff.clone(),
             project.patch_path.clone(),
+            project.selected_pull_request_number,
+            project.selected_pull_request_number.and_then(|number| {
+                project
+                    .pull_requests
+                    .iter()
+                    .find(|pull_request| pull_request.number == number)
+                    .map(|pull_request| pull_request.title.clone())
+            }),
         )
     };
 
@@ -253,6 +516,24 @@ pub(crate) async fn run_verification(state: State<'_, AppState>) -> Result<Front
                     diff,
                     VerificationMode::ApplyPatchToTempClone,
                     format!("Patch: {}", path.display()),
+                )
+            }
+            InputSource::PullRequest => {
+                let number = pull_request_number
+                    .ok_or("Choose a pull request before running verification")?;
+                let diff = github::load_pull_request_diff(&repo_path, number)
+                    .await
+                    .map_err(|e| format!("{e:#}"))?;
+                let source_label = match pull_request_title.as_deref() {
+                    Some(title) if !title.trim().is_empty() => {
+                        format!("Pull Request #{number}: {title}")
+                    }
+                    _ => format!("Pull Request #{number}"),
+                };
+                (
+                    diff,
+                    VerificationMode::ApplyPatchToCleanTempClone,
+                    source_label,
                 )
             }
         };
@@ -317,8 +598,12 @@ pub(crate) async fn export_markdown_report(
         return Err("Export canceled".into());
     };
 
-    fs::write(&path, markdown)
-        .map_err(|e| format!("failed to write markdown report to `{}`: {e}", path.display()))?;
+    fs::write(&path, markdown).map_err(|e| {
+        format!(
+            "failed to write markdown report to `{}`: {e}",
+            path.display()
+        )
+    })?;
 
     Ok(path.display().to_string())
 }

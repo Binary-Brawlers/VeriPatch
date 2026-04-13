@@ -486,6 +486,12 @@ kbd {
   gap: 8px;
 }
 
+.config-group-stack {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .config-label {
   font-size: 11px;
   font-weight: 600;
@@ -497,6 +503,22 @@ kbd {
 .config-hint {
   font-size: 12px;
   color: var(--text-tertiary);
+}
+
+.config-error {
+  font-size: 12px;
+  color: var(--color-danger);
+}
+
+.config-select {
+  min-width: 320px;
+  max-width: min(56vw, 520px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  font-size: 12px;
 }
 
 .segmented-control {
@@ -557,6 +579,13 @@ kbd {
   border-color: var(--border);
 }
 .btn-secondary:hover { background: var(--bg-surface-hover); }
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn:disabled:hover {
+  background: inherit;
+}
 
 .btn-sm { padding: 4px 10px; font-size: 12px; }
 
@@ -610,6 +639,26 @@ kbd {
 
 #results-area.has-history #results-history-panel {
   display: block;
+}
+
+@media (max-width: 960px) {
+  .toolbar,
+  .toolbar-left,
+  .toolbar-right,
+  .config-bar {
+    align-items: flex-start;
+  }
+
+  .toolbar,
+  .config-bar {
+    flex-direction: column;
+  }
+
+  .config-select {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 #result-finished {

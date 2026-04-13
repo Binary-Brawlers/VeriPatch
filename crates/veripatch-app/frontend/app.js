@@ -41,6 +41,13 @@ async function init() {
   // Clipboard / patch buttons
   document.getElementById("btn-clipboard").addEventListener("click", captureClipboard);
   document.getElementById("btn-patch").addEventListener("click", pickPatchFile);
+  document.getElementById("btn-pr-refresh").addEventListener("click", refreshPullRequests);
+  document.getElementById("pull-request-select").addEventListener("change", (e) => {
+    const rawValue = e.target.value;
+    selectPullRequest(rawValue ? Number(rawValue) : null);
+  });
+  document.getElementById("btn-pr-merge").addEventListener("click", mergeSelectedPullRequest);
+  document.getElementById("btn-pr-close").addEventListener("click", closeSelectedPullRequest);
 
   // Settings
   document.getElementById("btn-open-settings").addEventListener("click", openSettings);
@@ -192,6 +199,8 @@ function renderConfigBar(project) {
     src === "clipboard_diff" ? "flex" : "none";
   document.getElementById("patch-actions").style.display =
     src === "patch_file" ? "flex" : "none";
+  document.getElementById("pull-request-actions").style.display =
+    src === "pull_request" ? "flex" : "none";
 
   if (project.clipboard_diff) {
     const n = project.clipboard_diff.split("\n").length;
@@ -202,6 +211,8 @@ function renderConfigBar(project) {
 
   document.getElementById("patch-hint").textContent =
     project.patch_path || "No file selected";
+
+  renderPullRequestControls(project);
 }
 
 function renderResults(project) {
@@ -547,6 +558,49 @@ function statusKey(s) {
   return map[s] || s;
 }
 
+function renderPullRequestControls(project) {
+  const select = document.getElementById("pull-request-select");
+  const hint = document.getElementById("pull-request-hint");
+  const error = document.getElementById("pull-request-error");
+  const refreshButton = document.getElementById("btn-pr-refresh");
+  const mergeButton = document.getElementById("btn-pr-merge");
+  const closeButton = document.getElementById("btn-pr-close");
+  const pullRequests = project.pull_requests || [];
+  const selected = project.selected_pull_request_number;
+  const hasSelection = selected != null && pullRequests.some((pullRequest) => pullRequest.number === selected);
+
+  select.innerHTML = pullRequests.length > 0
+    ? pullRequests.map((pullRequest) => `
+        <option value="${pullRequest.number}" ${pullRequest.number === selected ? "selected" : ""}>
+          ${esc(formatPullRequestLabel(pullRequest))}
+        </option>
+      `).join("")
+    : `<option value="">No open pull requests</option>`;
+
+  select.disabled = !!project.pull_request_busy || pullRequests.length === 0;
+  refreshButton.disabled = !!project.pull_request_busy;
+  mergeButton.disabled = !!project.pull_request_busy || !hasSelection;
+  closeButton.disabled = !!project.pull_request_busy || !hasSelection;
+
+  if (project.pull_request_error) {
+    error.style.display = "inline";
+    error.textContent = project.pull_request_error;
+  } else {
+    error.style.display = "none";
+    error.textContent = "";
+  }
+
+  hint.textContent = project.pull_request_message
+    || (pullRequests.length > 0
+      ? "Select a pull request diff to verify."
+      : "Load open pull requests for this repository.");
+}
+
+function formatPullRequestLabel(pullRequest) {
+  const draft = pullRequest.is_draft ? "Draft · " : "";
+  return `#${pullRequest.number} · ${draft}${pullRequest.title} · ${pullRequest.head_ref_name} → ${pullRequest.base_ref_name} · ${pullRequest.author}`;
+}
+
 function loc(filePath, lineNumber) {
   if (!filePath) return "";
   const line = lineNumber ? `:${lineNumber}` : "";
@@ -678,8 +732,17 @@ async function setTheme(theme) {
 async function setSource(source) {
   try {
     state = await invoke("set_input_source", { source });
+    if (source === "pull_request") {
+      state = await invoke("refresh_pull_requests");
+    }
     render();
   } catch (e) {
+    try {
+      state = await invoke("get_state");
+      render();
+    } catch (_) {
+      // Ignore follow-up sync failures and keep the current in-memory state.
+    }
     console.error("set_input_source:", e);
   }
 }
@@ -700,6 +763,82 @@ async function pickPatchFile() {
     render();
   } catch (e) {
     console.error("pick_patch_file:", e);
+  }
+}
+
+async function refreshPullRequests() {
+  try {
+    const activeProject = getActiveProject();
+    if (activeProject) {
+      activeProject.pull_request_busy = true;
+      activeProject.pull_request_error = null;
+      activeProject.pull_request_message = "Refreshing pull requests…";
+      render();
+    }
+    state = await invoke("refresh_pull_requests");
+    render();
+  } catch (e) {
+    try {
+      state = await invoke("get_state");
+      render();
+    } catch (_) {
+      const activeProject = getActiveProject();
+      if (activeProject) {
+        activeProject.pull_request_busy = false;
+        activeProject.pull_request_error = String(e);
+        activeProject.pull_request_message = null;
+        render();
+      }
+    }
+  }
+}
+
+async function selectPullRequest(number) {
+  try {
+    state = await invoke("select_pull_request", { number });
+    render();
+  } catch (e) {
+    console.error("select_pull_request:", e);
+  }
+}
+
+async function mergeSelectedPullRequest() {
+  const activeProject = getActiveProject();
+  const number = activeProject?.selected_pull_request_number;
+  if (!number) return;
+  if (!window.confirm(`Merge pull request #${number}?`)) return;
+
+  try {
+    state = await invoke("merge_selected_pull_request");
+    render();
+  } catch (e) {
+    try {
+      state = await invoke("get_state");
+      render();
+    } catch (_) {
+      // Keep the current state if the sync attempt fails.
+    }
+    console.error("merge_selected_pull_request:", e);
+  }
+}
+
+async function closeSelectedPullRequest() {
+  const activeProject = getActiveProject();
+  const number = activeProject?.selected_pull_request_number;
+  if (!number) return;
+  if (!window.confirm(`Close pull request #${number}?`)) return;
+
+  try {
+    state = await invoke("close_selected_pull_request");
+    render();
+  } catch (e) {
+    try {
+      state = await invoke("get_state");
+      render();
+    } catch (_) {
+      // Keep the current state if the sync attempt fails.
+    }
+    console.error("close_selected_pull_request:", e);
   }
 }
 

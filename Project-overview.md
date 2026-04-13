@@ -46,11 +46,14 @@ The application should let a developer:
 - paste a unified diff
 - import a `.patch` file
 - inspect current working tree changes
+- load open pull requests from the same project repository
+- select a pull request diff as the verification source
 - configure an AI model provider and model
 - run a verification pipeline locally
 - optionally use AI to review and verify the change
 - receive a **Safe / Risky / Broken** verdict
 - understand why the change is considered safe or risky
+- merge or close a reviewed pull request from the app
 - export a markdown report for pull requests or code review
 
 This project should feel like a combination of:
@@ -104,6 +107,7 @@ The first version should support:
 - pasting a unified diff
 - importing a `.patch` file
 - reading local uncommitted git changes
+- selecting an open pull request from the same project repository
 
 Raw pasted code can be added later, but a diff-first workflow is cleaner and more practical for the first release.
 
@@ -206,6 +210,15 @@ For the MVP:
 - keep AI review optional rather than required for a verdict
 - use AI for explanation and risk analysis, not automatic code rewriting
 - make it clear what repository context is being sent to the model
+
+### 9. Pull Request Actions
+
+For repositories hosted on GitHub, the desktop app should also support a same-project pull request workflow:
+
+- list open pull requests for the currently opened repository
+- verify the selected pull request diff against a clean checkout of the project
+- allow the developer to either merge or close the pull request after review
+- keep these actions explicit and user-driven rather than automatic
 
 ---
 

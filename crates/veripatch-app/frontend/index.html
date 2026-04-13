@@ -108,6 +108,7 @@
               <button class="seg-btn active" data-source="current_working_tree">Working Tree</button>
               <button class="seg-btn" data-source="clipboard_diff">Clipboard</button>
               <button class="seg-btn" data-source="patch_file">Patch File</button>
+              <button class="seg-btn" data-source="pull_request">Pull Request</button>
             </div>
           </div>
 
@@ -119,6 +120,17 @@
           <div id="patch-actions" class="config-group" style="display:none">
             <button class="btn btn-secondary btn-sm" id="btn-patch">Choose file…</button>
             <span id="patch-hint" class="config-hint">No file selected</span>
+          </div>
+
+          <div id="pull-request-actions" class="config-group config-group-stack" style="display:none">
+            <div class="config-group">
+              <button class="btn btn-secondary btn-sm" id="btn-pr-refresh">Refresh PRs</button>
+              <select id="pull-request-select" class="config-select" aria-label="Pull request selector"></select>
+              <button class="btn btn-secondary btn-sm" id="btn-pr-merge">Merge</button>
+              <button class="btn btn-secondary btn-sm" id="btn-pr-close">Close</button>
+            </div>
+            <span id="pull-request-hint" class="config-hint">Load open pull requests for this repository.</span>
+            <span id="pull-request-error" class="config-error" style="display:none"></span>
           </div>
         </div>
 

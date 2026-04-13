@@ -17,7 +17,7 @@ VeriPatch is structured as a Cargo workspace with the following crates:
 ## Verification Pipeline
 
 ```
-Input (diff/patch/working tree)
+Input (diff/patch/working tree/pull request)
   → Parse diff
   → Run checks (compile, lint, test, security, deps)
   → Evaluate rules

@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use veripatch_runners::{
+    ProjectLanguage, SupportedLanguageInfo, detect_project_language, supported_languages,
+};
 
 // ── Theme ──────────────────────────────────────────────────────────
 
@@ -20,6 +23,18 @@ pub(crate) enum InputSource {
     CurrentWorkingTree,
     ClipboardDiff,
     PatchFile,
+    PullRequest,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PullRequestSummary {
+    pub number: u64,
+    pub title: String,
+    pub author: String,
+    pub base_ref_name: String,
+    pub head_ref_name: String,
+    pub updated_at: String,
+    pub is_draft: bool,
 }
 
 // ── Per-project state ──────────────────────────────────────────────
@@ -29,9 +44,15 @@ pub(crate) struct ProjectEntry {
     pub id: String,
     pub name: String,
     pub repo_path: String,
+    pub language: ProjectLanguage,
     pub input_source: InputSource,
     pub clipboard_diff: Option<String>,
     pub patch_path: Option<String>,
+    pub pull_requests: Vec<PullRequestSummary>,
+    pub selected_pull_request_number: Option<u64>,
+    pub pull_request_busy: bool,
+    pub pull_request_message: Option<String>,
+    pub pull_request_error: Option<String>,
     pub run_state: RunState,
     pub run_history: Vec<VerificationRunRecord>,
 }
@@ -66,6 +87,7 @@ pub(crate) struct VerificationRunRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct FrontendState {
     pub theme: Theme,
+    pub supported_languages: Vec<SupportedLanguageInfo>,
     pub projects: Vec<ProjectEntry>,
     pub active_project_id: Option<String>,
 }
@@ -79,6 +101,11 @@ pub(crate) struct ProjectState {
     pub input_source: InputSource,
     pub clipboard_diff: Option<String>,
     pub patch_path: Option<PathBuf>,
+    pub pull_requests: Vec<PullRequestSummary>,
+    pub selected_pull_request_number: Option<u64>,
+    pub pull_request_busy: bool,
+    pub pull_request_message: Option<String>,
+    pub pull_request_error: Option<String>,
     pub run_state: RunState,
     pub run_history: Vec<VerificationRunRecord>,
 }
@@ -92,6 +119,11 @@ impl ProjectState {
             input_source: InputSource::CurrentWorkingTree,
             clipboard_diff: None,
             patch_path: None,
+            pull_requests: Vec::new(),
+            selected_pull_request_number: None,
+            pull_request_busy: false,
+            pull_request_message: None,
+            pull_request_error: None,
             run_state: RunState::Idle,
             run_history: Vec::new(),
         }
@@ -102,9 +134,15 @@ impl ProjectState {
             id: self.id.clone(),
             name: self.name.clone(),
             repo_path: self.repo_path.display().to_string(),
+            language: detect_project_language(&self.repo_path),
             input_source: self.input_source,
             clipboard_diff: self.clipboard_diff.clone(),
             patch_path: self.patch_path.as_ref().map(|p| p.display().to_string()),
+            pull_requests: self.pull_requests.clone(),
+            selected_pull_request_number: self.selected_pull_request_number,
+            pull_request_busy: self.pull_request_busy,
+            pull_request_message: self.pull_request_message.clone(),
+            pull_request_error: self.pull_request_error.clone(),
             run_state: self.run_state.clone(),
             run_history: self.run_history.clone(),
         }
@@ -119,6 +157,8 @@ pub(crate) struct PersistedProjectState {
     pub input_source: InputSource,
     pub clipboard_diff: Option<String>,
     pub patch_path: Option<String>,
+    #[serde(default)]
+    pub selected_pull_request_number: Option<u64>,
     pub run_state: RunState,
     #[serde(default)]
     pub run_history: Vec<VerificationRunRecord>,
@@ -133,6 +173,7 @@ impl From<&ProjectState> for PersistedProjectState {
             input_source: value.input_source,
             clipboard_diff: value.clipboard_diff.clone(),
             patch_path: value.patch_path.as_ref().map(|p| p.display().to_string()),
+            selected_pull_request_number: value.selected_pull_request_number,
             run_state: value.run_state.clone(),
             run_history: value.run_history.clone(),
         }
@@ -148,6 +189,11 @@ impl From<PersistedProjectState> for ProjectState {
             input_source: value.input_source,
             clipboard_diff: value.clipboard_diff,
             patch_path: value.patch_path.map(PathBuf::from),
+            pull_requests: Vec::new(),
+            selected_pull_request_number: value.selected_pull_request_number,
+            pull_request_busy: false,
+            pull_request_message: None,
+            pull_request_error: None,
             run_state: value.run_state,
             run_history: value.run_history,
         }
@@ -231,6 +277,7 @@ impl AppState {
         let projects = self.projects.lock().unwrap();
         FrontendState {
             theme: *self.theme.lock().unwrap(),
+            supported_languages: supported_languages(),
             projects: projects.iter().map(|p| p.to_entry()).collect(),
             active_project_id: self.active_project_id.lock().unwrap().clone(),
         }

@@ -10,10 +10,11 @@ Instead of generating more code, VeriPatch answers a more important question:
 
 ## Features
 
-- Open a local repository and paste a unified diff, import a `.patch` file, or inspect uncommitted changes
+- Open a local repository and paste a unified diff, import a `.patch` file, inspect uncommitted changes, or review same-repo pull requests
 - Run a local verification pipeline (compile check, lint, tests, security scan, dependency audit)
 - Optionally use an AI model (via OpenRouter) for risk analysis and review
 - Get a clear **Safe / Risky / Broken** verdict with explanations
+- Merge or close an open pull request after review from the desktop app
 - Export markdown reports for pull requests or code review
 
 ## Status
@@ -26,6 +27,7 @@ Instead of generating more code, VeriPatch answers a more important question:
 
 - [Rust](https://rustup.rs/) (1.85+)
 - macOS, Linux, or Windows
+- Optional: [GitHub CLI](https://cli.github.com/) (`gh`) for pull request review, merge, and close actions
 
 ### Build
 

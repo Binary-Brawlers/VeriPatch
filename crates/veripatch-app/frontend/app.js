@@ -31,6 +31,7 @@ async function init() {
 
   // Toolbar
   document.getElementById("btn-run").addEventListener("click", runVerification);
+  document.getElementById("btn-export-markdown").addEventListener("click", exportMarkdownReport);
 
   // Source segmented control
   document.querySelectorAll(".seg-btn").forEach((btn) => {
@@ -40,6 +41,13 @@ async function init() {
   // Clipboard / patch buttons
   document.getElementById("btn-clipboard").addEventListener("click", captureClipboard);
   document.getElementById("btn-patch").addEventListener("click", pickPatchFile);
+  document.getElementById("btn-pr-refresh").addEventListener("click", refreshPullRequests);
+  document.getElementById("pull-request-select").addEventListener("change", (e) => {
+    const rawValue = e.target.value;
+    selectPullRequest(rawValue ? Number(rawValue) : null);
+  });
+  document.getElementById("btn-pr-merge").addEventListener("click", mergeSelectedPullRequest);
+  document.getElementById("btn-pr-close").addEventListener("click", closeSelectedPullRequest);
 
   // Settings
   document.getElementById("btn-open-settings").addEventListener("click", openSettings);
@@ -114,12 +122,17 @@ function renderSidebar() {
   const list = document.getElementById("project-list");
   const empty = document.getElementById("no-projects");
   const projectsSection = document.getElementById("sidebar-projects-section");
+  const languagesSection = document.getElementById("sidebar-languages-section");
   const settingsSection = document.getElementById("sidebar-settings-section");
   const openSettingsBtn = document.getElementById("btn-open-settings");
   const closeSettingsBtn = document.getElementById("btn-close-settings");
+  const supportedLanguageList = document.getElementById("supported-language-list");
+
+  renderSupportedLanguages(supportedLanguageList, state.supported_languages || []);
 
   if (activeView === "settings") {
     projectsSection.style.display = "none";
+    languagesSection.style.display = "none";
     settingsSection.style.display = "block";
     openSettingsBtn.style.display = "none";
     closeSettingsBtn.style.display = "inline-flex";
@@ -130,6 +143,7 @@ function renderSidebar() {
   }
 
   projectsSection.style.display = "block";
+  languagesSection.style.display = "block";
   settingsSection.style.display = "none";
   openSettingsBtn.style.display = "inline-flex";
   closeSettingsBtn.style.display = "none";
@@ -145,7 +159,10 @@ function renderSidebar() {
     .map((p) => {
       const active = p.id === state.active_project_id ? "active" : "";
       return `<li class="project-item ${active}" data-id="${esc(p.id)}">
-        <span class="project-label">${esc(p.name)}</span>
+        <div class="project-copy">
+          <span class="project-label">${esc(p.name)}</span>
+          <span class="language-badge project-language-badge ${languageClassName(p.language)}">${esc(formatLanguageLabel(p.language))}</span>
+        </div>
         <button class="remove-btn" data-id="${esc(p.id)}" title="Remove project">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -171,6 +188,35 @@ function renderSidebar() {
 function renderToolbar(project) {
   document.getElementById("project-name").textContent = project.name;
   document.getElementById("project-path").textContent = project.repo_path;
+  const languageBadge = document.getElementById("project-language-badge");
+  languageBadge.textContent = formatLanguageLabel(project.language);
+  languageBadge.className = `language-badge toolbar-language-badge ${languageClassName(project.language)}`;
+
+  const runState = project.run_state || { kind: "idle" };
+  const exportButton = document.getElementById("btn-export-markdown");
+  const exportStatus = document.getElementById("export-status");
+  const canExport = runState.kind === "finished";
+
+  exportButton.disabled = !canExport;
+  exportStatus.textContent = canExport ? "Ready to export" : "";
+}
+
+function renderSupportedLanguages(container, languages) {
+  if (!container) return;
+
+  if (!languages || languages.length === 0) {
+    container.innerHTML = '<div class="sidebar-empty-copy">No supported languages registered.</div>';
+    return;
+  }
+
+  container.innerHTML = languages.map((language) => `
+    <div class="supported-language-item">
+      <div class="supported-language-head">
+        <span class="language-badge supported-language-badge ${languageClassName(language.id)}">${esc(language.name)}</span>
+      </div>
+      <div class="supported-language-meta">${esc((language.manifests || []).join(" • "))}</div>
+    </div>
+  `).join("");
 }
 
 function renderConfigBar(project) {
@@ -183,6 +229,8 @@ function renderConfigBar(project) {
     src === "clipboard_diff" ? "flex" : "none";
   document.getElementById("patch-actions").style.display =
     src === "patch_file" ? "flex" : "none";
+  document.getElementById("pull-request-actions").style.display =
+    src === "pull_request" ? "flex" : "none";
 
   if (project.clipboard_diff) {
     const n = project.clipboard_diff.split("\n").length;
@@ -193,6 +241,8 @@ function renderConfigBar(project) {
 
   document.getElementById("patch-hint").textContent =
     project.patch_path || "No file selected";
+
+  renderPullRequestControls(project);
 }
 
 function renderResults(project) {
@@ -372,25 +422,36 @@ function renderSnapshot(snapshot) {
   });
 
   // Risky patterns
-  renderSection("section-risky", "Risky Patterns", r.risky_patterns, (f) => {
-    const sev = (f.severity || "low").toLowerCase();
-    return renderFinding({
-      badge: `<span class="severity severity-${sev}">${esc(f.severity)}</span>`,
-      message: f.message,
-      filePath: f.file_path,
-      lineNumber: f.line_number,
-      snippet: renderFindingSnippet(diffLookup, f.file_path, f.line_number),
-    });
-  });
+  renderSection(
+    "section-risky",
+    "Risky Patterns",
+    r.risky_patterns,
+    (f) => {
+      const sev = (f.severity || "low").toLowerCase();
+      return renderFinding({
+        badge: `<span class="severity severity-${sev}">${esc(f.severity)}</span>`,
+        message: f.message,
+        filePath: f.file_path,
+        lineNumber: f.line_number,
+        snippet: renderFindingSnippet(diffLookup, f.file_path, f.line_number),
+      });
+    },
+    "No risky patterns detected in added lines."
+  );
 
   // Assumptions
-  renderSection("section-assumptions", "Assumptions", r.assumptions, (a) =>
-    renderFinding({
-      message: a.message,
-      filePath: a.file_path,
-      lineNumber: a.line_number,
-      snippet: renderFindingSnippet(diffLookup, a.file_path, a.line_number),
-    })
+  renderSection(
+    "section-assumptions",
+    "Assumptions",
+    r.assumptions,
+    (a) =>
+      renderFinding({
+        message: a.message,
+        filePath: a.file_path,
+        lineNumber: a.line_number,
+        snippet: renderFindingSnippet(diffLookup, a.file_path, a.line_number),
+      }),
+    "No assumptions detected in added lines."
   );
 
   // Dependencies
@@ -404,10 +465,25 @@ function renderSnapshot(snapshot) {
   );
 }
 
-function renderSection(containerId, title, items, renderItem) {
+function renderSection(containerId, title, items, renderItem, emptyMessage = null) {
   const el = document.getElementById(containerId);
   if (!items || items.length === 0) {
-    el.innerHTML = "";
+    if (!emptyMessage) {
+      el.innerHTML = "";
+      return;
+    }
+
+    el.innerHTML = `
+      <details class="collapsible-section" open>
+        <summary class="section-header">
+          <svg class="chevron-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+          ${esc(title)}<span class="count-badge">0</span>
+        </summary>
+        <div class="section-content">
+          <div class="section-empty-state">${esc(emptyMessage)}</div>
+        </div>
+      </details>
+    `;
     return;
   }
   el.innerHTML = `
@@ -538,10 +614,66 @@ function statusKey(s) {
   return map[s] || s;
 }
 
+function renderPullRequestControls(project) {
+  const select = document.getElementById("pull-request-select");
+  const hint = document.getElementById("pull-request-hint");
+  const error = document.getElementById("pull-request-error");
+  const refreshButton = document.getElementById("btn-pr-refresh");
+  const mergeButton = document.getElementById("btn-pr-merge");
+  const closeButton = document.getElementById("btn-pr-close");
+  const pullRequests = project.pull_requests || [];
+  const selected = project.selected_pull_request_number;
+  const hasSelection = selected != null && pullRequests.some((pullRequest) => pullRequest.number === selected);
+
+  select.innerHTML = pullRequests.length > 0
+    ? pullRequests.map((pullRequest) => `
+        <option value="${pullRequest.number}" ${pullRequest.number === selected ? "selected" : ""}>
+          ${esc(formatPullRequestLabel(pullRequest))}
+        </option>
+      `).join("")
+    : `<option value="">No open pull requests</option>`;
+
+  select.disabled = !!project.pull_request_busy || pullRequests.length === 0;
+  refreshButton.disabled = !!project.pull_request_busy;
+  mergeButton.disabled = !!project.pull_request_busy || !hasSelection;
+  closeButton.disabled = !!project.pull_request_busy || !hasSelection;
+
+  if (project.pull_request_error) {
+    error.style.display = "inline";
+    error.textContent = project.pull_request_error;
+  } else {
+    error.style.display = "none";
+    error.textContent = "";
+  }
+
+  hint.textContent = project.pull_request_message
+    || (pullRequests.length > 0
+      ? "Select a pull request diff to verify."
+      : "Load open pull requests for this repository.");
+}
+
+function formatPullRequestLabel(pullRequest) {
+  const draft = pullRequest.is_draft ? "Draft · " : "";
+  return `#${pullRequest.number} · ${draft}${pullRequest.title} · ${pullRequest.head_ref_name} → ${pullRequest.base_ref_name} · ${pullRequest.author}`;
+}
+
 function loc(filePath, lineNumber) {
   if (!filePath) return "";
   const line = lineNumber ? `:${lineNumber}` : "";
   return `<span class="location">${esc(filePath)}${line}</span>`;
+}
+
+function formatLanguageLabel(language) {
+  const labels = {
+    rust: "Rust",
+    typescript: "TypeScript",
+    unsupported: "Unsupported",
+  };
+  return labels[language] || String(language || "Unknown");
+}
+
+function languageClassName(language) {
+  return `language-${String(language || "unsupported").toLowerCase()}`;
 }
 
 function esc(str) {
@@ -669,8 +801,17 @@ async function setTheme(theme) {
 async function setSource(source) {
   try {
     state = await invoke("set_input_source", { source });
+    if (source === "pull_request") {
+      state = await invoke("refresh_pull_requests");
+    }
     render();
   } catch (e) {
+    try {
+      state = await invoke("get_state");
+      render();
+    } catch (_) {
+      // Ignore follow-up sync failures and keep the current in-memory state.
+    }
     console.error("set_input_source:", e);
   }
 }
@@ -694,6 +835,82 @@ async function pickPatchFile() {
   }
 }
 
+async function refreshPullRequests() {
+  try {
+    const activeProject = getActiveProject();
+    if (activeProject) {
+      activeProject.pull_request_busy = true;
+      activeProject.pull_request_error = null;
+      activeProject.pull_request_message = "Refreshing pull requests…";
+      render();
+    }
+    state = await invoke("refresh_pull_requests");
+    render();
+  } catch (e) {
+    try {
+      state = await invoke("get_state");
+      render();
+    } catch (_) {
+      const activeProject = getActiveProject();
+      if (activeProject) {
+        activeProject.pull_request_busy = false;
+        activeProject.pull_request_error = String(e);
+        activeProject.pull_request_message = null;
+        render();
+      }
+    }
+  }
+}
+
+async function selectPullRequest(number) {
+  try {
+    state = await invoke("select_pull_request", { number });
+    render();
+  } catch (e) {
+    console.error("select_pull_request:", e);
+  }
+}
+
+async function mergeSelectedPullRequest() {
+  const activeProject = getActiveProject();
+  const number = activeProject?.selected_pull_request_number;
+  if (!number) return;
+  if (!window.confirm(`Merge pull request #${number}?`)) return;
+
+  try {
+    state = await invoke("merge_selected_pull_request");
+    render();
+  } catch (e) {
+    try {
+      state = await invoke("get_state");
+      render();
+    } catch (_) {
+      // Keep the current state if the sync attempt fails.
+    }
+    console.error("merge_selected_pull_request:", e);
+  }
+}
+
+async function closeSelectedPullRequest() {
+  const activeProject = getActiveProject();
+  const number = activeProject?.selected_pull_request_number;
+  if (!number) return;
+  if (!window.confirm(`Close pull request #${number}?`)) return;
+
+  try {
+    state = await invoke("close_selected_pull_request");
+    render();
+  } catch (e) {
+    try {
+      state = await invoke("get_state");
+      render();
+    } catch (_) {
+      // Keep the current state if the sync attempt fails.
+    }
+    console.error("close_selected_pull_request:", e);
+  }
+}
+
 async function runVerification() {
   try {
     const activeProject = getActiveProject();
@@ -714,6 +931,27 @@ async function runVerification() {
       activeProject.run_state = { kind: "failed", data: String(e) };
       render();
     }
+  }
+}
+
+async function exportMarkdownReport() {
+  try {
+    const activeProject = getActiveProject();
+    const snapshot = activeProject?.run_state?.kind === "finished" ? activeProject.run_state.data : null;
+    if (!snapshot) return;
+
+    const savedPath = await invoke("export_markdown_report", { snapshot });
+    const status = document.getElementById("export-status");
+    if (status) {
+      status.textContent = `Saved to ${savedPath.split("/").pop() || savedPath}`;
+      window.setTimeout(() => {
+        if (status.textContent === `Saved to ${savedPath.split("/").pop() || savedPath}`) {
+          status.textContent = "Ready to export";
+        }
+      }, 2500);
+    }
+  } catch (e) {
+    console.error("export_markdown_report:", e);
   }
 }
 

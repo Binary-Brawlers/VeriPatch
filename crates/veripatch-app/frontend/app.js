@@ -31,6 +31,7 @@ async function init() {
 
   // Toolbar
   document.getElementById("btn-run").addEventListener("click", runVerification);
+  document.getElementById("btn-export-markdown").addEventListener("click", exportMarkdownReport);
 
   // Source segmented control
   document.querySelectorAll(".seg-btn").forEach((btn) => {
@@ -171,6 +172,14 @@ function renderSidebar() {
 function renderToolbar(project) {
   document.getElementById("project-name").textContent = project.name;
   document.getElementById("project-path").textContent = project.repo_path;
+
+  const runState = project.run_state || { kind: "idle" };
+  const exportButton = document.getElementById("btn-export-markdown");
+  const exportStatus = document.getElementById("export-status");
+  const canExport = runState.kind === "finished";
+
+  exportButton.disabled = !canExport;
+  exportStatus.textContent = canExport ? "Ready to export" : "";
 }
 
 function renderConfigBar(project) {
@@ -714,6 +723,27 @@ async function runVerification() {
       activeProject.run_state = { kind: "failed", data: String(e) };
       render();
     }
+  }
+}
+
+async function exportMarkdownReport() {
+  try {
+    const activeProject = getActiveProject();
+    const snapshot = activeProject?.run_state?.kind === "finished" ? activeProject.run_state.data : null;
+    if (!snapshot) return;
+
+    const savedPath = await invoke("export_markdown_report", { snapshot });
+    const status = document.getElementById("export-status");
+    if (status) {
+      status.textContent = `Saved to ${savedPath.split("/").pop() || savedPath}`;
+      window.setTimeout(() => {
+        if (status.textContent === `Saved to ${savedPath.split("/").pop() || savedPath}`) {
+          status.textContent = "Ready to export";
+        }
+      }, 2500);
+    }
+  } catch (e) {
+    console.error("export_markdown_report:", e);
   }
 }
 

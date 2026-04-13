@@ -6,9 +6,19 @@ use veripatch_rules::rule::RiskSeverity;
 use veripatch_runners::runner::CheckStatus;
 
 pub fn render_markdown(result: &VerificationResult) -> Result<String> {
+    render_markdown_with_source(None, result)
+}
+
+pub fn render_markdown_with_source(
+    source_label: Option<&str>,
+    result: &VerificationResult,
+) -> Result<String> {
     let mut output = String::new();
 
     output.push_str("# VeriPatch Report\n\n");
+    if let Some(source_label) = source_label {
+        output.push_str(&format!("- Source: **{}**\n", source_label));
+    }
     output.push_str(&format!("- Repository: `{}`\n", result.repo_path.display()));
     output.push_str(&format!(
         "- Verdict: **{}**\n",

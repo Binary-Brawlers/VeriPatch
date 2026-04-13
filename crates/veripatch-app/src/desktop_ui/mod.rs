@@ -105,6 +105,7 @@ pub fn run() -> anyhow::Result<()> {
             commands::set_clipboard_diff,
             commands::pick_patch_file,
             commands::run_verification,
+            commands::export_markdown_report,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run VeriPatch");

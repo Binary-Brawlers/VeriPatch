@@ -3,6 +3,7 @@ use std::fs;
 use chrono::Utc;
 use tauri::State;
 use veripatch_core::{VerificationInput, VerificationMode, load_local_diff, verify};
+use veripatch_report::markdown::render_markdown_with_source;
 
 use super::storage;
 use super::types::*;
@@ -295,6 +296,58 @@ pub(crate) async fn run_verification(state: State<'_, AppState>) -> Result<Front
     Ok(state.to_frontend_state())
 }
 
+#[tauri::command]
+pub(crate) async fn export_markdown_report(
+    snapshot: VerificationSnapshot,
+) -> Result<String, String> {
+    let markdown = render_markdown_with_source(Some(&snapshot.source_label), &snapshot.result)
+        .map_err(|e| format!("failed to render markdown report: {e:#}"))?;
+    let default_file_name = default_report_file_name(&snapshot);
+
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        rfd::FileDialog::new()
+            .set_file_name(&default_file_name)
+            .add_filter("Markdown", &["md"])
+            .save_file()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let Some(path) = picked else {
+        return Err("Export canceled".into());
+    };
+
+    fs::write(&path, markdown)
+        .map_err(|e| format!("failed to write markdown report to `{}`: {e}", path.display()))?;
+
+    Ok(path.display().to_string())
+}
+
 fn persist_state(state: &AppState) -> Result<(), String> {
     storage::persist_state(state).map_err(|e| format!("failed to persist state: {e:#}"))
+}
+
+fn default_report_file_name(snapshot: &VerificationSnapshot) -> String {
+    let repo_name = snapshot
+        .result
+        .repo_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("veripatch-report");
+    let safe_repo_name: String = repo_name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect();
+
+    if safe_repo_name.is_empty() {
+        "veripatch-report.md".to_string()
+    } else {
+        format!("veripatch-report-{safe_repo_name}.md")
+    }
 }

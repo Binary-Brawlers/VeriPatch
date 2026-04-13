@@ -454,11 +454,18 @@ kbd {
 }
 
 .toolbar-left { display: flex; align-items: baseline; gap: 12px; }
+.toolbar-right { display: flex; align-items: center; gap: 8px; }
 .toolbar-title { font-size: 15px; font-weight: 600; }
 .toolbar-path {
   font-size: 12px;
   color: var(--text-tertiary);
   font-family: var(--font-mono);
+}
+
+.toolbar-status {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  min-height: 1em;
 }
 
 /* ─── Config bar ─────────────────────────────────────────────── */

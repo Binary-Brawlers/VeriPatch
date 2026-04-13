@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="system">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VeriPatch</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- ─── Sidebar ──────────────────────────────────────────── -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <svg class="logo-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M9 12l2 2 4-4"/>
+          <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/>
+        </svg>
+        <span class="logo-text">VeriPatch</span>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-header">
+          <span>Projects</span>
+          <button class="icon-btn" id="btn-add-project" title="Add project">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          </button>
+        </div>
+        <ul id="project-list" class="project-list">
+          <!-- filled by JS -->
+        </ul>
+        <div id="no-projects" class="empty-state">
+          <p>No projects yet</p>
+          <button class="btn btn-secondary btn-sm" id="btn-add-first">Add a project</button>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="theme-switcher">
+          <button class="theme-btn" data-theme="light" title="Light">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          </button>
+          <button class="theme-btn" data-theme="dark" title="Dark">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+          <button class="theme-btn" data-theme="system" title="System">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ─── Main content ─────────────────────────────────────── -->
+    <main id="main">
+      <!-- Empty / no project selected -->
+      <div id="view-empty" class="main-empty">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+          <path d="M9 12l2 2 4-4"/>
+          <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z"/>
+        </svg>
+        <h2>Welcome to VeriPatch</h2>
+        <p>Add a project to start verifying AI-generated code changes.</p>
+        <button class="btn btn-primary" id="btn-empty-add">Add Project</button>
+      </div>
+
+      <!-- Project workspace -->
+      <div id="view-project" style="display:none">
+        <!-- Toolbar -->
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <h2 id="project-name" class="toolbar-title"></h2>
+            <span id="project-path" class="toolbar-path"></span>
+          </div>
+          <div class="toolbar-right">
+            <button class="btn btn-primary" id="btn-run">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run Verification
+            </button>
+          </div>
+        </div>
+
+        <!-- Config bar -->
+        <div class="config-bar">
+          <div class="config-group">
+            <label class="config-label">Source</label>
+            <div class="segmented-control">
+              <button class="seg-btn active" data-source="current_working_tree">Working Tree</button>
+              <button class="seg-btn" data-source="clipboard_diff">Clipboard</button>
+              <button class="seg-btn" data-source="patch_file">Patch File</button>
+            </div>
+          </div>
+
+          <div id="clipboard-actions" class="config-group" style="display:none">
+            <button class="btn btn-secondary btn-sm" id="btn-clipboard">Paste from clipboard</button>
+            <span id="clipboard-hint" class="config-hint">No diff loaded</span>
+          </div>
+
+          <div id="patch-actions" class="config-group" style="display:none">
+            <button class="btn btn-secondary btn-sm" id="btn-patch">Choose file…</button>
+            <span id="patch-hint" class="config-hint">No file selected</span>
+          </div>
+        </div>
+
+        <!-- Results area -->
+        <div id="results-area">
+          <div id="result-idle" class="result-placeholder">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.25">
+              <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            <p>Configure your diff source and run the verification pipeline.</p>
+          </div>
+
+          <div id="result-running" class="result-placeholder" style="display:none">
+            <div class="spinner"></div>
+            <p>Running checks — compile, lint, tests, security rules…</p>
+          </div>
+
+          <div id="result-failed" class="result-placeholder" style="display:none">
+            <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--color-danger)" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
+            </svg>
+            <p id="error-message" class="text-danger"></p>
+          </div>
+
+          <div id="result-finished" style="display:none">
+            <div id="metrics" class="metrics-grid"></div>
+            <div id="section-checks" class="result-section"></div>
+            <div id="section-files" class="result-section"></div>
+            <div id="section-risky" class="result-section"></div>
+            <div id="section-assumptions" class="result-section"></div>
+            <div id="section-deps" class="result-section"></div>
+            <div id="section-warnings" class="result-section"></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

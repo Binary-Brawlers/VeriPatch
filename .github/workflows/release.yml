@@ -30,8 +30,8 @@ jobs:
             echo "is_beta=false" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
-    name: Build ${{ matrix.target }}
+  tauri:
+    name: Bundle ${{ matrix.target }}
     needs: meta
     runs-on: ${{ matrix.os }}
     strategy:
@@ -43,7 +43,7 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-14
           - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-22.04
           - target: x86_64-pc-windows-msvc
             os: windows-latest
 
@@ -56,7 +56,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: release-${{ matrix.target }}
+          key: release-tauri-${{ matrix.target }}
 
       # Linux system dependencies for GPUI
       - name: Install Linux dependencies
@@ -71,77 +71,107 @@ jobs:
             libfreetype6-dev
           sudo apt-get install -y libayatana-appindicator3-dev || sudo apt-get install -y libappindicator3-dev
 
-      - name: Verify Linux native dependencies
-        if: runner.os == 'Linux'
-        run: |
-          set -euo pipefail
-          for module in \
-            glib-2.0 gobject-2.0 gio-2.0 gdk-3.0 gtk+-3.0 \
-            webkit2gtk-4.1 javascriptcoregtk-4.1 libsoup-3.0; do
-            pkg-config --exists "$module"
-          done
+      - name: Build and upload Tauri bundles
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: crates/veripatch-app
+          args: --target ${{ matrix.target }}
+          tagName: ${{ needs.meta.outputs.version }}
+          releaseName: VeriPatch ${{ needs.meta.outputs.version }}
+          releaseBody: Automated release for ${{ needs.meta.outputs.version }}.
+          releaseDraft: false
+          prerelease: ${{ needs.meta.outputs.is_beta == 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build release binaries
-        run: cargo build --release --target ${{ matrix.target }} -p veripatch-app -p veripatch-cli
+  cli-build:
+    name: Build CLI ${{ matrix.target }}
+    needs: meta
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            os: macos-13
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
 
-      # Package binaries
-      - name: Package (Unix)
-        id: package_unix
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-cli-${{ matrix.target }}
+
+      - name: Build veripatch-cli
+        run: cargo build --release --target ${{ matrix.target }} -p veripatch-cli
+
+      - name: Package CLI (Unix)
         if: runner.os != 'Windows'
         run: |
-          STAGING="veripatch-${{ needs.meta.outputs.version }}-${{ matrix.target }}"
+          STAGING="veripatch-cli-${{ needs.meta.outputs.version }}-${{ matrix.target }}"
           mkdir "$STAGING"
-          cp target/${{ matrix.target }}/release/veripatch "$STAGING/" || true
-          cp target/${{ matrix.target }}/release/veripatch-cli "$STAGING/" || true
+          cp target/${{ matrix.target }}/release/veripatch-cli "$STAGING/"
           cp README.md LICENSE-MIT LICENSE-APACHE "$STAGING/"
           tar czf "$STAGING.tar.gz" "$STAGING"
-          echo "asset=$STAGING.tar.gz" >> "$GITHUB_OUTPUT"
 
-      - name: Package (Windows)
-        id: package_windows
+      - name: Package CLI (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $STAGING = "veripatch-${{ needs.meta.outputs.version }}-${{ matrix.target }}"
+          $STAGING = "veripatch-cli-${{ needs.meta.outputs.version }}-${{ matrix.target }}"
           New-Item -ItemType Directory -Path $STAGING
-          Copy-Item "target/${{ matrix.target }}/release/veripatch.exe" "$STAGING/" -ErrorAction SilentlyContinue
-          Copy-Item "target/${{ matrix.target }}/release/veripatch-cli.exe" "$STAGING/" -ErrorAction SilentlyContinue
+          Copy-Item "target/${{ matrix.target }}/release/veripatch-cli.exe" "$STAGING/"
           Copy-Item "README.md","LICENSE-MIT","LICENSE-APACHE" "$STAGING/"
           Compress-Archive -Path "$STAGING/*" -DestinationPath "$STAGING.zip"
-          echo "asset=$STAGING.zip" >> $env:GITHUB_OUTPUT
 
-      - name: Upload artifact
+      - name: Upload CLI artifact (Unix)
+        if: runner.os != 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: release-${{ matrix.target }}
-          path: ${{ steps.package_unix.outputs.asset || steps.package_windows.outputs.asset }}
+          name: cli-${{ matrix.target }}
+          path: veripatch-cli-${{ needs.meta.outputs.version }}-${{ matrix.target }}.tar.gz
           retention-days: 1
 
-  publish:
-    name: Publish release
-    needs: [meta, build]
+      - name: Upload CLI artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: veripatch-cli-${{ needs.meta.outputs.version }}-${{ matrix.target }}.zip
+          retention-days: 1
+
+  cli-publish:
+    name: Publish CLI assets
+    needs: [meta, tauri, cli-build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download CLI artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-          pattern: release-*
+          pattern: cli-*
           merge-multiple: true
 
-      - name: Generate checksums
+      - name: Generate CLI checksums
         run: |
           cd artifacts
           sha256sum * > checksums-sha256.txt
 
-      - name: Create GitHub Release
+      - name: Upload CLI files to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.meta.outputs.version }}
-          name: "VeriPatch ${{ needs.meta.outputs.version }}"
-          prerelease: ${{ needs.meta.outputs.is_beta == 'true' }}
-          generate_release_notes: true
           files: |
             artifacts/*

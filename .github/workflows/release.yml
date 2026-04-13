@@ -75,7 +75,7 @@ jobs:
           args: --target ${{ matrix.target }}${{ matrix.bundles }}
           tagName: ${{ needs.meta.outputs.version }}
           releaseName: VeriPatch ${{ needs.meta.outputs.version }}
-          releaseBody: Automated release for ${{ needs.meta.outputs.version }}.
+          generateReleaseNotes: true
           releaseDraft: false
           prerelease: ${{ needs.meta.outputs.is_beta == 'true' }}
         env:

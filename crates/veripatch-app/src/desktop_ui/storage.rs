@@ -10,10 +10,15 @@ const STATE_FILE_NAME: &str = "desktop_state.json";
 
 pub(crate) fn load_or_initialize_state(app: &tauri::AppHandle) -> anyhow::Result<AppState> {
     let storage_path = resolve_storage_path(app)?;
-    let persisted = load_from_disk(&storage_path).unwrap_or_else(|err| {
+    let mut persisted = load_from_disk(&storage_path).unwrap_or_else(|err| {
         tracing::warn!("failed to load persisted desktop state: {err:#}");
         PersistedAppState::default()
     });
+    let normalized = normalize_persisted_state(&mut persisted);
+
+    if normalized {
+        save_to_disk(&storage_path, &persisted)?;
+    }
 
     Ok(AppState::from_persisted(storage_path, persisted))
 }
@@ -79,4 +84,19 @@ fn save_to_disk(path: &Path, state: &PersistedAppState) -> anyhow::Result<()> {
     })?;
 
     Ok(())
+}
+
+fn normalize_persisted_state(state: &mut PersistedAppState) -> bool {
+    let mut changed = false;
+
+    for project in &mut state.projects {
+        if matches!(project.run_state, super::types::RunState::Running) {
+            project.run_state = super::types::RunState::Failed(
+                "Previous verification was interrupted. Run verification again.".into(),
+            );
+            changed = true;
+        }
+    }
+
+    changed
 }

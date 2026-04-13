@@ -28,6 +28,21 @@ pub fn run() -> anyhow::Result<()> {
                 .item(&quit)
                 .build()?;
 
+            let edit_menu = SubmenuBuilder::new(handle, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .separator()
+                .select_all()
+                .build()?;
+
+            let open_settings = MenuItemBuilder::with_id("open_settings", "Settings…")
+                .accelerator("CmdOrCtrl+,")
+                .build(handle)?;
+
             let theme_light = MenuItemBuilder::with_id("theme_light", "Light").build(handle)?;
             let theme_dark = MenuItemBuilder::with_id("theme_dark", "Dark").build(handle)?;
             let theme_system = MenuItemBuilder::with_id("theme_system", "System").build(handle)?;
@@ -39,11 +54,14 @@ pub fn run() -> anyhow::Result<()> {
                 .build()?;
 
             let view_menu = SubmenuBuilder::new(handle, "View")
+                .item(&open_settings)
+                .separator()
                 .item(&theme_sub)
                 .build()?;
 
             let menu = MenuBuilder::new(handle)
                 .item(&file_menu)
+                .item(&edit_menu)
                 .item(&view_menu)
                 .build()?;
 
@@ -66,6 +84,9 @@ pub fn run() -> anyhow::Result<()> {
                     }
                     "theme_system" => {
                         let _ = window.eval("window.setThemeFromMenu('system')");
+                    }
+                    "open_settings" => {
+                        let _ = window.eval("window.openSettingsFromMenu()");
                     }
                     _ => {}
                 }

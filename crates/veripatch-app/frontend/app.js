@@ -184,13 +184,34 @@ function renderSnapshot(snapshot) {
   });
 
   // Files
-  renderSection("section-files", "Changed Files", r.diff.files, (f) => {
+  renderSection("section-files", "Changed Files", r.diff.files, (f, i) => {
     const ct = (f.change_type || "Modified").toLowerCase();
-    return `<div class="file-item">
-      <span class="change-type ${ct}">${esc(f.change_type || "Mod")}</span>
-      <span>${esc(f.display_path || f.path)}</span>
-      <span class="diff-stat">+${f.additions} / -${f.deletions}</span>
-    </div>`;
+    const filePath = f.new_path || f.old_path || "<unknown>";
+    const fileName = filePath.split("/").pop();
+    const dirPath = filePath.includes("/") ? filePath.substring(0, filePath.lastIndexOf("/") + 1) : "";
+    const hasHunks = f.hunks && f.hunks.length > 0;
+    let diffHtml = "";
+    if (hasHunks) {
+      diffHtml = `<div class="diff-preview">${f.hunks.map((h) =>
+        `<div class="diff-hunk"><div class="diff-hunk-header">${esc(h.header)}</div>${h.lines.map((l) => {
+          const cls = l.kind === "Addition" ? "diff-add" : l.kind === "Deletion" ? "diff-del" : "diff-ctx";
+          const prefix = l.kind === "Addition" ? "+" : l.kind === "Deletion" ? "-" : " ";
+          const ln = l.kind === "Deletion"
+            ? (l.old_line_number != null ? String(l.old_line_number).padStart(4) : "    ")
+            : (l.new_line_number != null ? String(l.new_line_number).padStart(4) : "    ");
+          return `<div class="diff-line ${cls}"><span class="diff-ln">${ln}</span><span class="diff-prefix">${prefix}</span><span class="diff-text">${esc(l.content)}</span></div>`;
+        }).join("")}</div>`
+      ).join("")}</div>`;
+    }
+    return `<details class="file-entry" id="file-entry-${i}">
+      <summary class="file-item">
+        <svg class="file-chevron" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+        <span class="change-type ${ct}">${esc(f.change_type || "Mod")}</span>
+        <span class="file-path"><span class="file-dir">${esc(dirPath)}</span><span class="file-name">${esc(fileName)}</span></span>
+        <span class="diff-stat">+${f.additions} / -${f.deletions}</span>
+      </summary>
+      ${hasHunks ? diffHtml : '<div class="diff-preview"><div class="diff-empty">No diff content available</div></div>'}
+    </details>`;
   });
 
   // Risky patterns

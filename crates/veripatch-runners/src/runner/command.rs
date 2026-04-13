@@ -1,3 +1,5 @@
+use std::ffi::OsStr;
+
 use anyhow::Result;
 use tokio::process::Command;
 
@@ -6,9 +8,20 @@ use super::{CheckResult, CheckStatus, RunnerContext};
 pub(super) async fn run_command_check(
     context: &RunnerContext,
     name: &str,
-    program: &str,
+    program: impl AsRef<OsStr>,
     args: &[&str],
 ) -> Result<CheckResult> {
+    let args = args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+    run_command_check_owned(context, name, program, &args).await
+}
+
+pub(super) async fn run_command_check_owned(
+    context: &RunnerContext,
+    name: &str,
+    program: impl AsRef<OsStr>,
+    args: &[String],
+) -> Result<CheckResult> {
+    let program = program.as_ref();
     let output = Command::new(program)
         .args(args)
         .current_dir(&context.repo_path)
@@ -26,7 +39,7 @@ pub(super) async fn run_command_check(
         } else {
             CheckStatus::Failed
         },
-        command: Some(format!("{} {}", program, args.join(" "))),
+        command: Some(format!("{} {}", program.to_string_lossy(), args.join(" "))),
         summary: summarize_output(output.status.success(), &stdout, &stderr),
         details,
     })

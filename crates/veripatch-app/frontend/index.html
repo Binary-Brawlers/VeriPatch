@@ -34,6 +34,15 @@
         </div>
       </div>
 
+      <div class="sidebar-section sidebar-section-compact" id="sidebar-languages-section">
+        <div class="sidebar-section-header">
+          <span>Supported Languages</span>
+        </div>
+        <div id="supported-language-list" class="supported-language-list">
+          <!-- filled by JS -->
+        </div>
+      </div>
+
       <div class="sidebar-section" id="sidebar-settings-section" style="display:none">
         <div class="sidebar-section-header">
           <span>Settings</span>
@@ -84,7 +93,10 @@
         <!-- Toolbar -->
         <div class="toolbar">
           <div class="toolbar-left">
-            <h2 id="project-name" class="toolbar-title"></h2>
+            <div class="toolbar-title-row">
+              <h2 id="project-name" class="toolbar-title"></h2>
+              <span id="project-language-badge" class="language-badge toolbar-language-badge"></span>
+            </div>
             <span id="project-path" class="toolbar-path"></span>
           </div>
           <div class="toolbar-right">

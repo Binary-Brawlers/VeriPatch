@@ -6,4 +6,7 @@
 
 pub mod runner;
 
-pub use runner::{CheckResult, CheckStatus, RunnerContext, run_default_checks};
+pub use runner::{
+    CheckResult, CheckStatus, ProjectLanguage, RunnerContext, SupportedLanguageInfo,
+    detect_project_language, run_default_checks, supported_languages,
+};

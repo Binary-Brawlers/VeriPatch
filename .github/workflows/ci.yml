@@ -16,45 +16,15 @@ env:
 
 jobs:
   verify:
-    name: ${{ matrix.name }}
+    name: Verify
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Check
-            command: cargo check --workspace --all-targets
-            components: ""
-            needs_linux_deps: true
-            verify_linux_deps: true
-            use_cache: true
-          - name: Test
-            command: cargo test --workspace
-            components: ""
-            needs_linux_deps: true
-            verify_linux_deps: false
-            use_cache: true
-          - name: Clippy
-            command: cargo clippy --workspace --all-targets -- -D warnings
-            components: clippy
-            needs_linux_deps: true
-            verify_linux_deps: false
-            use_cache: true
-          - name: Format
-            command: cargo fmt --all -- --check
-            components: rustfmt
-            needs_linux_deps: false
-            verify_linux_deps: false
-            use_cache: false
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Linux dependencies
-        if: matrix.needs_linux_deps
         uses: ./.github/actions/install-linux-deps
 
       - name: Verify Linux native dependencies
-        if: matrix.verify_linux_deps
         run: |
           set -euo pipefail
           for module in \
@@ -64,17 +34,31 @@ jobs:
           done
 
       - uses: dtolnay/rust-toolchain@stable
-        if: matrix.components == ''
-
-      - uses: dtolnay/rust-toolchain@stable
-        if: matrix.components != ''
         with:
-          components: ${{ matrix.components }}
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
-        if: matrix.use_cache
         with:
           shared-key: ci-ubuntu-stable
 
-      - name: Run ${{ matrix.name }}
-        run: ${{ matrix.command }}
+      - name: Check workspace
+        run: cargo check --workspace --all-targets
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test workspace
+        run: cargo test --workspace
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check

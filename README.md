@@ -26,12 +26,14 @@ Instead of generating more code, VeriPatch answers a more important question:
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (1.85+)
+- [Node.js](https://nodejs.org/) (20+)
 - macOS, Linux, or Windows
 - Optional: [GitHub CLI](https://cli.github.com/) (`gh`) for pull request review, merge, and close actions
 
 ### Build
 
 ```sh
+npm install --prefix crates/veripatch-app/frontend
 cargo build --release
 ```
 
@@ -51,7 +53,7 @@ cargo run -p veripatch-cli -- --help
 
 ```
 crates/
-  veripatch-app/        # GPUI desktop application
+  veripatch-app/        # Tauri desktop application with a React frontend
   veripatch-cli/        # Command-line interface
   veripatch-core/       # Core verification engine
   veripatch-ai/         # AI provider integration (OpenRouter)

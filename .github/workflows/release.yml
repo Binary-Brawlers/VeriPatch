@@ -68,6 +68,14 @@ jobs:
         with:
           extra-packages: libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libwayland-dev libvulkan-dev libfontconfig-dev libfreetype6-dev
 
+      - name: Install frontend dependencies
+        working-directory: crates/veripatch-app/frontend
+        run: npm install
+
+      - name: Build frontend assets
+        working-directory: crates/veripatch-app/frontend
+        run: npm run build
+
       - name: Build and upload Tauri bundles
         uses: tauri-apps/tauri-action@v0
         with:

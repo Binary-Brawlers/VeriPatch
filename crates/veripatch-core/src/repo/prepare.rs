@@ -13,6 +13,7 @@ use super::git::{ensure_git_repository, ensure_head_exists, load_local_diff};
 pub enum VerificationMode {
     CurrentWorkingTree,
     ApplyPatchToTempClone,
+    ApplyPatchToCleanTempClone,
 }
 
 pub(crate) struct PreparedRepository {
@@ -36,15 +37,28 @@ pub(crate) async fn prepare_repository(
             execution_path: repo_path.to_path_buf(),
             _temp_dir: None,
         }),
-        VerificationMode::ApplyPatchToTempClone => prepare_temp_clone(repo_path, diff_text).await,
+        VerificationMode::ApplyPatchToTempClone => {
+            prepare_temp_clone(repo_path, diff_text, true).await
+        }
+        VerificationMode::ApplyPatchToCleanTempClone => {
+            prepare_temp_clone(repo_path, diff_text, false).await
+        }
     }
 }
 
-async fn prepare_temp_clone(repo_path: &Path, diff_text: &str) -> Result<PreparedRepository> {
+async fn prepare_temp_clone(
+    repo_path: &Path,
+    diff_text: &str,
+    include_current_worktree: bool,
+) -> Result<PreparedRepository> {
     ensure_git_repository(repo_path).await?;
     ensure_head_exists(repo_path).await?;
 
-    let current_worktree_diff = load_local_diff(repo_path).await.ok();
+    let current_worktree_diff = if include_current_worktree {
+        load_local_diff(repo_path).await.ok()
+    } else {
+        None
+    };
 
     let temp_dir = tempfile::tempdir()?;
     let clone_path = temp_dir.path().join("repo");

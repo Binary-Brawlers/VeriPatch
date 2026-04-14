@@ -5,4 +5,4 @@
 
 pub mod markdown;
 
-pub use markdown::render_markdown;
+pub use markdown::{render_markdown, render_markdown_with_source};

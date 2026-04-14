@@ -1,4 +1,5 @@
 mod commands;
+mod github;
 mod storage;
 mod types;
 
@@ -104,7 +105,12 @@ pub fn run() -> anyhow::Result<()> {
             commands::set_input_source,
             commands::set_clipboard_diff,
             commands::pick_patch_file,
+            commands::refresh_pull_requests,
+            commands::select_pull_request,
+            commands::merge_selected_pull_request,
+            commands::close_selected_pull_request,
             commands::run_verification,
+            commands::export_markdown_report,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run VeriPatch");

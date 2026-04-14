@@ -6,9 +6,19 @@ use veripatch_rules::rule::RiskSeverity;
 use veripatch_runners::runner::CheckStatus;
 
 pub fn render_markdown(result: &VerificationResult) -> Result<String> {
+    render_markdown_with_source(None, result)
+}
+
+pub fn render_markdown_with_source(
+    source_label: Option<&str>,
+    result: &VerificationResult,
+) -> Result<String> {
     let mut output = String::new();
 
     output.push_str("# VeriPatch Report\n\n");
+    if let Some(source_label) = source_label {
+        output.push_str(&format!("- Source: **{}**\n", source_label));
+    }
     output.push_str(&format!("- Repository: `{}`\n", result.repo_path.display()));
     output.push_str(&format!(
         "- Verdict: **{}**\n",
@@ -47,8 +57,10 @@ pub fn render_markdown(result: &VerificationResult) -> Result<String> {
         }
     }
 
-    if !result.risky_patterns.is_empty() {
-        output.push_str("\n## Risky Patterns\n\n");
+    output.push_str("\n## Risky Patterns\n\n");
+    if result.risky_patterns.is_empty() {
+        output.push_str("- No risky patterns detected in added lines.\n");
+    } else {
         for finding in &result.risky_patterns {
             output.push_str(&format!(
                 "- [{}] {}{}\n",
@@ -59,8 +71,10 @@ pub fn render_markdown(result: &VerificationResult) -> Result<String> {
         }
     }
 
-    if !result.assumptions.is_empty() {
-        output.push_str("\n## Assumptions\n\n");
+    output.push_str("\n## Assumptions\n\n");
+    if result.assumptions.is_empty() {
+        output.push_str("- No assumptions detected in added lines.\n");
+    } else {
         for assumption in &result.assumptions {
             output.push_str(&format!(
                 "- {}{}\n",
@@ -116,5 +130,47 @@ fn format_location(file_path: Option<&str>, line_number: Option<usize>) -> Strin
         (Some(file_path), Some(line_number)) => format!(" (`{}:{}`)", file_path, line_number),
         (Some(file_path), None) => format!(" (`{}`)", file_path),
         _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_markdown;
+    use veripatch_core::{
+        Verdict, VerificationResult,
+        diff::{ChangedFile, FileChangeType, ParsedDiff},
+    };
+
+    #[test]
+    fn renders_empty_risky_patterns_and_assumptions_sections() {
+        let result = VerificationResult {
+            repo_path: std::path::PathBuf::from("/tmp/demo"),
+            diff: ParsedDiff {
+                files: vec![ChangedFile {
+                    old_path: Some("src/demo.ts".to_string()),
+                    new_path: Some("src/demo.ts".to_string()),
+                    change_type: FileChangeType::Modified,
+                    additions: 1,
+                    deletions: 0,
+                    hunks: Vec::new(),
+                }],
+                total_additions: 1,
+                total_deletions: 0,
+            },
+            verdict: Verdict::Safe,
+            score: 0,
+            checks: Vec::new(),
+            warnings: Vec::new(),
+            assumptions: Vec::new(),
+            dependency_notes: Vec::new(),
+            risky_patterns: Vec::new(),
+        };
+
+        let markdown = render_markdown(&result).expect("render markdown");
+
+        assert!(markdown.contains("## Risky Patterns"));
+        assert!(markdown.contains("No risky patterns detected in added lines."));
+        assert!(markdown.contains("## Assumptions"));
+        assert!(markdown.contains("No assumptions detected in added lines."));
     }
 }

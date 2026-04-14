@@ -1,6 +1,6 @@
 {
   "productName": "VeriPatch",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "com.veripatch.app",
   "build": {
     "frontendDist": "./frontend/dist"

@@ -68,6 +68,13 @@ examples/               # Example diffs and usage
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
+## Release Flow
+
+- `develop` is the integration branch for everyday changes
+- `main` is reserved for stable releases
+- Releasing means merging `develop` into `main` with one semver label on the PR: `semver-major`, `semver-minor`, or `semver-patch`
+- The release automation bumps the version, creates the matching `v<major>.<minor>.<patch>` tag, publishes the desktop and CLI artifacts from that tag, and syncs the version files back to `develop`
+
 ## License
 
 Licensed under either of:

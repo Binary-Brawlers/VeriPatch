@@ -56,6 +56,14 @@ cargo fmt --all -- --check
 4. Request review from a maintainer
 5. Squash commits if requested
 
+## Branching and Releases
+
+- Open feature and fix PRs against `develop`
+- Keep `main` for stable release merges only
+- Merge `develop` into `main` when you want to publish a release
+- Label the release PR with exactly one of `semver-major`, `semver-minor`, or `semver-patch`
+- When the release PR lands on `main`, GitHub Actions bumps the app version, creates the matching `v<major>.<minor>.<patch>` tag, publishes the release from that tag, and syncs the version files back to `develop`
+
 ## Reporting Issues
 
 - Use GitHub Issues to report bugs or request features

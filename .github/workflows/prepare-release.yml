@@ -1,0 +1,118 @@
+name: Prepare Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: prepare-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Resolve release bump
+    if: ${{ github.actor != 'github-actions[bot]' && !startsWith(github.event.head_commit.message, 'chore(release): bump version to ') }}
+    runs-on: ubuntu-latest
+    outputs:
+      bump: ${{ steps.pr.outputs.bump }}
+      pr_number: ${{ steps.pr.outputs.pr_number }}
+    steps:
+      - name: Resolve merged PR and bump type
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const commitSha = context.sha;
+            const { data: pulls } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner,
+              repo,
+              commit_sha: commitSha,
+            });
+
+            const mergedPr = pulls.find((pr) => pr.base.ref === "main" && pr.merged_at);
+            if (!mergedPr) {
+              core.setFailed(`No merged pull request targeting main was found for commit ${commitSha}. Releases must enter main through a PR.`);
+              return;
+            }
+
+            if (mergedPr.head.ref !== "develop") {
+              core.setFailed(`Release PR #${mergedPr.number} must merge develop into main. Found source branch '${mergedPr.head.ref}'.`);
+              return;
+            }
+
+            const labels = mergedPr.labels.map((label) => label.name);
+            const semverLabels = ["semver-major", "semver-minor", "semver-patch"].filter((label) => labels.includes(label));
+
+            if (semverLabels.length !== 1) {
+              core.setFailed(`Release PR #${mergedPr.number} must have exactly one of: semver-major, semver-minor, semver-patch.`);
+              return;
+            }
+
+            core.setOutput("pr_number", String(mergedPr.number));
+            core.setOutput("bump", semverLabels[0].replace("semver-", ""));
+
+  bump-and-tag:
+    name: Bump version and create tag
+    needs: plan
+    if: ${{ needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.bump.outputs.tag }}
+      ref: ${{ steps.bump.outputs.ref }}
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump release version
+        id: bump
+        env:
+          BUMP: ${{ needs.plan.outputs.bump }}
+        run: |
+          set -euo pipefail
+          VERSION="$(python3 scripts/version.py bump "$BUMP")"
+          TAG="v$VERSION"
+
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists"
+            exit 1
+          fi
+
+          git add Cargo.toml crates/veripatch-app/tauri.conf.json crates/veripatch-app/frontend/package.json
+          git commit -m "chore(release): bump version to $VERSION"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin HEAD:main "$TAG"
+
+          git fetch origin develop
+          git checkout -B develop origin/develop
+          python3 scripts/version.py set "$VERSION" >/dev/null
+
+          if ! git diff --quiet -- Cargo.toml crates/veripatch-app/tauri.conf.json crates/veripatch-app/frontend/package.json; then
+            git add Cargo.toml crates/veripatch-app/tauri.conf.json crates/veripatch-app/frontend/package.json
+            git commit -m "chore(release): sync version to $VERSION"
+            git push origin HEAD:develop
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: bump-and-tag
+    if: ${{ needs.bump-and-tag.result == 'success' }}
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.bump-and-tag.outputs.tag }}
+      ref: ${{ needs.bump-and-tag.outputs.ref }}
+    secrets: inherit
